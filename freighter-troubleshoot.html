@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Freighter Troubleshooting</title>
+</head>
+<body>
+    <h1>Freighter Extension Troubleshooting</h1>
+    
+    <h2>Step 1: Check Extension Installation</h2>
+    <p>In Chromium, go to: <code>chrome://extensions/</code></p>
+    <p>Look for "Freighter" extension and make sure:</p>
+    <ul>
+        <li>✅ It's installed</li>
+        <li>✅ It's enabled (toggle switch is ON)</li>
+        <li>✅ "Allow in incognito" is checked (if using incognito)</li>
+    </ul>
+    
+    <h2>Step 2: Check Extension Permissions</h2>
+    <p>Click "Details" on the Freighter extension and ensure:</p>
+    <ul>
+        <li>✅ "Allow access to file URLs" is enabled (for local testing)</li>
+        <li>✅ Site access is set to "On all sites" or "On click"</li>
+    </ul>
+    
+    <h2>Step 3: Test Different URLs</h2>
+    <p>Try these URLs to see where Freighter works:</p>
+    <ul>
+        <li><a href="https://laboratory.stellar.org/">Stellar Laboratory (https://laboratory.stellar.org/)</a></li>
+        <li><a href="http://localhost:3005">Token Lab (http://localhost:3005)</a></li>
+        <li><a href="https://freighter.app/">Official Freighter Site</a></li>
+    </ul>
+    
+    <h2>Step 4: Manual Injection Test</h2>
+    <p>Open Developer Tools (F12) and paste this in the Console:</p>
+    <pre>
+console.log('window.freighter:', window.freighter);
+console.log('All window properties containing freighter:', 
+    Object.keys(window).filter(key => key.toLowerCase().includes('freighter')));
+    
+// Wait for potential async loading
+setTimeout(() => {
+    console.log('After 2s - window.freighter:', window.freighter);
+}, 2000);
+    </pre>
+    
+    <h2>Step 5: Extension ID Check</h2>
+    <p>The Freighter extension ID should be: <code>bcacfldlkkdogcmkkibnjlakofdplcbk</code></p>
+    <p>Check if it matches in chrome://extensions/</p>
+    
+    <div id="live-check" style="border: 2px solid #ccc; padding: 20px; margin: 20px 0;">
+        <h3>Live Extension Check</h3>
+        <p id="status">Checking...</p>
+        <button onclick="recheckExtension()">Recheck Extension</button>
+    </div>
+    
+    <script>
+        function recheckExtension() {
+            const statusEl = document.getElementById('status');
+            
+            // Check multiple ways extensions might inject
+            const checks = {
+                'window.freighter': !!window.freighter,
+                'window.stellar': !!window.stellar,
+                'document.freighter': !!(document as any).freighter,
+                'extension events': checkExtensionEvents()
+            };
+            
+            statusEl.innerHTML = `
+                <strong>Extension Detection Results:</strong><br>
+                ${Object.entries(checks).map(([key, value]) => 
+                    `${value ? '✅' : '❌'} ${key}: ${value}`).join('<br>')}
+                <br><br>
+                <strong>Available global objects:</strong><br>
+                ${Object.keys(window).filter(key => 
+                    key.toLowerCase().includes('stellar') || 
+                    key.toLowerCase().includes('freighter') ||
+                    key.toLowerCase().includes('wallet')
+                ).join(', ') || 'None found'}
+            `;
+        }
+        
+        function checkExtensionEvents() {
+            // Listen for extension ready events
+            let eventDetected = false;
+            
+            window.addEventListener('message', (event) => {
+                if (event.data && (event.data.type === 'FREIGHTER_API' || 
+                                  event.source === 'freighter')) {
+                    eventDetected = true;
+                    console.log('Freighter message event detected:', event.data);
+                }
+            });
+            
+            // Check for common extension patterns
+            const hasContentScript = document.querySelector('script[src*="extension"]') !== null;
+            return eventDetected || hasContentScript;
+        }
+        
+        // Initial check
+        recheckExtension();
+        
+        // Recheck periodically in case extension loads late
+        setTimeout(recheckExtension, 2000);
+        setTimeout(recheckExtension, 5000);
+        
+        // Listen for extension messages
+        window.addEventListener('message', (event) => {
+            console.log('Message received:', event);
+            if (event.data && event.data.type) {
+                document.getElementById('status').innerHTML += 
+                    `<br><strong>Message Event:</strong> ${JSON.stringify(event.data)}`;
+            }
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Freighter Wallet Recovery</title>
+</head>
+<body>
+    <h1>🔧 Freighter Wallet Not Opening - Fix Guide</h1>
+    
+    <div style="background: #fff3cd; border: 1px solid #ffeaa7; padding: 15px; margin: 10px 0; border-radius: 5px;">
+        <h2>🏥 Common Freighter Issues & Solutions</h2>
+    </div>
+    
+    <h2>🛠️ Try These Solutions (in order):</h2>
+    
+    <h3>Solution 1: Force Open Freighter</h3>
+    <ol>
+        <li>Click the Freighter extension icon in your browser toolbar (puzzle piece icon → Freighter)</li>
+        <li>If you don't see it, go to <code>chrome://extensions/</code> and click the Freighter extension icon there</li>
+        <li>Try entering your password if it asks</li>
+    </ol>
+    
+    <h3>Solution 2: Reset Extension Storage</h3>
+    <ol>
+        <li>Go to <code>chrome://extensions/</code></li>
+        <li>Find Freighter extension</li>
+        <li>Click "Remove" to uninstall it</li>
+        <li>Reinstall from <a href="https://chrome.google.com/webstore/detail/freighter/bcacfldlkkdogcmkkibnjlakofdplcbk" target="_blank">Chrome Web Store</a></li>
+        <li>Set up your wallet again (use the same seed phrase if you saved it)</li>
+    </ol>
+    
+    <h3>Solution 3: Check Extension Data</h3>
+    <ol>
+        <li>Go to <code>chrome://extensions/</code></li>
+        <li>Enable "Developer mode" (toggle in top right)</li>
+        <li>Click "Inspect views" under Freighter extension</li>
+        <li>This opens DevTools for the extension - check for errors</li>
+    </ol>
+    
+    <h3>Solution 4: Manual Wallet Access</h3>
+    <p>Try navigating directly to the extension:</p>
+    <ul>
+        <li>Type in address bar: <code>chrome-extension://bcacfldlkkdogcmkkibnjlakofdplcbk/index.html</code></li>
+        <li>This should open Freighter directly</li>
+    </ul>
+    
+    <h3>Solution 5: Alternative - Use Stellar Laboratory</h3>
+    <p>If Freighter still won't work, test it on the official Stellar Laboratory:</p>
+    <ul>
+        <li>Go to <a href="https://laboratory.stellar.org/" target="_blank">https://laboratory.stellar.org/</a></li>
+        <li>Try connecting Freighter there first</li>
+        <li>If it works there, then it's a localhost issue</li>
+    </ul>
+    
+    <div style="border: 2px solid #007bff; padding: 20px; margin: 20px 0; border-radius: 10px;">
+        <h3>🧪 Test Freighter Status</h3>
+        <button onclick="testFreighter()" style="background: #007bff; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer;">
+            Check Freighter Status
+        </button>
+        <div id="results" style="margin-top: 15px;"></div>
+    </div>
+    
+    <h3>Solution 6: Create New Devnet Wallet</h3>
+    <p>If you get Freighter working but need devnet funds:</p>
+    <ol>
+        <li>Switch Freighter to "Testnet" network</li>
+        <li>Copy your public key</li>
+        <li>Go to <a href="https://friendbot.stellar.org/" target="_blank">Stellar Friendbot</a></li>
+        <li>Paste your public key and click "Get test network lumens"</li>
+    </ol>
+    
+    <script>
+        function testFreighter() {
+            const resultsDiv = document.getElementById('results');
+            
+            resultsDiv.innerHTML = '<p>🔍 Checking Freighter status...</p>';
+            
+            setTimeout(() => {
+                const freighter = window.freighter;
+                
+                if (!freighter) {
+                    resultsDiv.innerHTML = `
+                        <div style="background: #f8d7da; border: 1px solid #f5c6cb; padding: 10px; border-radius: 5px;">
+                            <h4>❌ Freighter Not Detected</h4>
+                            <p>The extension is not injecting into this page.</p>
+                            <p><strong>Try:</strong> Solutions 1-4 above</p>
+                        </div>
+                    `;
+                    return;
+                }
+                
+                // Test if extension is responsive
+                freighter.isConnected()
+                    .then(connected => {
+                        resultsDiv.innerHTML = `
+                            <div style="background: #d4edda; border: 1px solid #c3e6cb; padding: 10px; border-radius: 5px;">
+                                <h4>✅ Freighter Extension Detected!</h4>
+                                <p><strong>Connected:</strong> ${connected}</p>
+                                <p><strong>Available methods:</strong> ${Object.keys(freighter).length}</p>
+                                <p>Now try going back to Token Lab and clicking "Connect Browser"!</p>
+                            </div>
+                        `;
+                    })
+                    .catch(error => {
+                        resultsDiv.innerHTML = `
+                            <div style="background: #fff3cd; border: 1px solid #ffeaa7; padding: 10px; border-radius: 5px;">
+                                <h4>⚠️ Freighter Detected But Not Responding</h4>
+                                <p><strong>Error:</strong> ${error.message}</p>
+                                <p><strong>Try:</strong> Solutions 1-3 above to reset the extension</p>
+                            </div>
+                        `;
+                    });
+            }, 1000);
+        }
+        
+        // Auto-test on load
+        window.addEventListener('load', () => {
+            setTimeout(testFreighter, 2000);
+        });
+    </script>
+</body>
+</html>

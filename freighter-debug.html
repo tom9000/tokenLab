@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Freighter Extension Debug</title>
+</head>
+<body>
+    <h1>Freighter Extension Debug</h1>
+    <div id="results"></div>
+    
+    <script>
+        function checkFreighter() {
+            const freighter = window.freighter;
+            const results = document.getElementById('results');
+            
+            const debugInfo = {
+                windowFreighterExists: !!freighter,
+                freighterMethods: freighter ? Object.keys(freighter) : [],
+                hasGetPublicKey: freighter && typeof freighter.getPublicKey === 'function',
+                hasIsConnected: freighter && typeof freighter.isConnected === 'function',
+                hasSignTransaction: freighter && typeof freighter.signTransaction === 'function',
+                isSafuWallet: freighter && freighter._isSafuWallet,
+                timestamp: new Date().toISOString()
+            };
+            
+            console.log('Freighter Debug Info:', debugInfo);
+            
+            results.innerHTML = `
+                <h2>Debug Results (${debugInfo.timestamp})</h2>
+                <pre>${JSON.stringify(debugInfo, null, 2)}</pre>
+                
+                <h3>Extension Status:</h3>
+                <p><strong>Extension Available:</strong> ${debugInfo.windowFreighterExists ? '✅ YES' : '❌ NO'}</p>
+                <p><strong>Has Required Methods:</strong> ${debugInfo.hasGetPublicKey && debugInfo.hasIsConnected ? '✅ YES' : '❌ NO'}</p>
+                <p><strong>Is Safu Wallet:</strong> ${debugInfo.isSafuWallet ? '✅ YES' : '❌ NO'}</p>
+                
+                <h3>Next Steps:</h3>
+                ${!debugInfo.windowFreighterExists ? 
+                    '<p>❌ Freighter extension not detected. Make sure it\'s installed and enabled.</p>' :
+                    !debugInfo.hasGetPublicKey || !debugInfo.hasIsConnected ?
+                    '<p>⚠️ Freighter detected but missing required methods. Extension may be loading...</p>' :
+                    '<p>✅ Freighter extension is properly detected and should work!</p>'
+                }
+            `;
+            
+            // Test connection if available
+            if (debugInfo.windowFreighterExists && debugInfo.hasGetPublicKey && debugInfo.hasIsConnected) {
+                testConnection();
+            }
+        }
+        
+        async function testConnection() {
+            try {
+                const freighter = window.freighter;
+                console.log('Testing Freighter connection...');
+                
+                const isConnected = await freighter.isConnected();
+                console.log('Is Connected:', isConnected);
+                
+                if (!isConnected) {
+                    console.log('Attempting to get public key (this will trigger connection)...');
+                    const publicKey = await freighter.getPublicKey();
+                    console.log('Public Key:', publicKey);
+                }
+                
+                const network = await freighter.getNetwork();
+                console.log('Network:', network);
+                
+                const networkDetails = await freighter.getNetworkDetails();
+                console.log('Network Details:', networkDetails);
+                
+                document.getElementById('results').innerHTML += `
+                    <h3>Connection Test Results:</h3>
+                    <p><strong>Is Connected:</strong> ${isConnected}</p>
+                    <p><strong>Network:</strong> ${network}</p>
+                    <p><strong>Network Details:</strong> ${JSON.stringify(networkDetails, null, 2)}</p>
+                `;
+                
+            } catch (error) {
+                console.error('Connection test failed:', error);
+                document.getElementById('results').innerHTML += `
+                    <h3>Connection Test Results:</h3>
+                    <p><strong>Error:</strong> ${error.message}</p>
+                `;
+            }
+        }
+        
+        // Check immediately
+        checkFreighter();
+        
+        // Also check after a delay in case extension loads slowly
+        setTimeout(checkFreighter, 1000);
+        setTimeout(checkFreighter, 3000);
+        
+        // Add button for manual check
+        document.body.innerHTML += '<button onclick="checkFreighter()" style="margin: 20px; padding: 10px;">Refresh Check</button>';
+        document.body.innerHTML += '<button onclick="testConnection()" style="margin: 20px; padding: 10px;">Test Connection</button>';
+    </script>
+</body>
+</html>

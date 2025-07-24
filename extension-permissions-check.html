@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Extension Permissions Fix</title>
+</head>
+<body>
+    <h1>🔧 Fix Freighter Extension Permissions</h1>
+    
+    <div style="background: #fff3cd; border: 1px solid #ffeaa7; padding: 15px; margin: 10px 0; border-radius: 5px;">
+        <h2>⚠️ Most Likely Issue: Local File Access</h2>
+        <p><strong>Extensions are blocked on localhost by default!</strong></p>
+    </div>
+    
+    <h2>🛠️ Step-by-Step Fix:</h2>
+    
+    <h3>1. Open Extension Settings</h3>
+    <p>In Chromium, go to: <strong><code>chrome://extensions/</code></strong></p>
+    
+    <h3>2. Find Freighter Extension</h3>
+    <p>Look for "Freighter" in your extensions list</p>
+    
+    <h3>3. Click "Details"</h3>
+    <p>Click the "Details" button on the Freighter extension</p>
+    
+    <h3>4. Enable Required Permissions</h3>
+    <p>Make sure these are enabled:</p>
+    <ul>
+        <li>✅ <strong>"Allow access to file URLs"</strong> - THIS IS CRITICAL for localhost</li>
+        <li>✅ <strong>"Allow in incognito"</strong> (if using incognito mode)</li>
+        <li>✅ Site access: "On all sites" or "On click"</li>
+    </ul>
+    
+    <h3>5. Reload This Page</h3>
+    <p>After enabling permissions, reload this page and test below:</p>
+    
+    <div style="border: 2px solid #007bff; padding: 20px; margin: 20px 0; border-radius: 10px;">
+        <h3>🧪 Test Extension After Fixing Permissions</h3>
+        <button onclick="testExtension()" style="background: #007bff; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer;">
+            Test Freighter Extension
+        </button>
+        <div id="results" style="margin-top: 15px;"></div>
+    </div>
+    
+    <h3>6. Alternative: Test on HTTPS</h3>
+    <p>If localhost still doesn't work, try these official sites where Freighter should work:</p>
+    <ul>
+        <li><a href="https://laboratory.stellar.org/" target="_blank">Stellar Laboratory</a></li>
+        <li><a href="https://freighter.app/" target="_blank">Official Freighter Site</a></li>
+    </ul>
+    
+    <script>
+        function testExtension() {
+            const resultsDiv = document.getElementById('results');
+            
+            // Clear previous results
+            resultsDiv.innerHTML = '<p>🔍 Testing extension...</p>';
+            
+            setTimeout(() => {
+                const freighter = window.freighter;
+                const hasExtension = !!freighter;
+                
+                if (hasExtension) {
+                    resultsDiv.innerHTML = `
+                        <div style="background: #d4edda; border: 1px solid #c3e6cb; padding: 10px; border-radius: 5px;">
+                            <h4>✅ SUCCESS! Freighter Extension Detected</h4>
+                            <p><strong>Available methods:</strong> ${Object.keys(freighter).join(', ')}</p>
+                            <p>Now go back to Token Lab and try "Connect Browser"!</p>
+                        </div>
+                    `;
+                } else {
+                    resultsDiv.innerHTML = `
+                        <div style="background: #f8d7da; border: 1px solid #f5c6cb; padding: 10px; border-radius: 5px;">
+                            <h4>❌ Extension Still Not Detected</h4>
+                            <p><strong>Next steps:</strong></p>
+                            <ol>
+                                <li>Double-check you enabled "Allow access to file URLs"</li>
+                                <li>Try refreshing this page (Ctrl+R or Cmd+R)</li>
+                                <li>Try restarting Chromium completely</li>
+                                <li>Test on <a href="https://laboratory.stellar.org/" target="_blank">Stellar Laboratory</a> instead</li>
+                            </ol>
+                        </div>
+                    `;
+                }
+            }, 1000);
+        }
+        
+        // Auto-test on page load
+        window.addEventListener('load', () => {
+            setTimeout(() => {
+                if (window.freighter) {
+                    document.getElementById('results').innerHTML = `
+                        <div style="background: #d4edda; border: 1px solid #c3e6cb; padding: 10px; border-radius: 5px;">
+                            <h4>✅ Extension Already Working!</h4>
+                            <p>Freighter is detected. Go back to Token Lab and try "Connect Browser"!</p>
+                        </div>
+                    `;
+                }
+            }, 1000);
+        });
+    </script>
+</body>
+</html>
