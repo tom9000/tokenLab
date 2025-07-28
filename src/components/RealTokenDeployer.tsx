@@ -89,6 +89,12 @@ export default function RealTokenDeployer() {
     publicKey?: string;
     network?: string;
     mode?: 'popup' | 'agent';
+    sessionData?: {
+      accessToken: string;
+      sessionPassword: string;
+      encryptedSeed: string;
+      sessionKey?: string;
+    };
   }>({
     isConnected: false
   });
@@ -113,7 +119,7 @@ export default function RealTokenDeployer() {
   const [transferAmount, setTransferAmount] = useState('100');
   const [selectedTokenForTransfer, setSelectedTokenForTransfer] = useState<DeployedToken | null>(null);
 
-  const addLog = (message: string, type: 'info' | 'success' | 'error' | 'warning' = 'info') => {
+  const addLog = (message: string, type: 'info' | 'success' | 'error' | 'warning' = 'info', isAgentAction = false) => {
     const timestamp = new Date().toLocaleTimeString();
     const icon = {
       info: 'ℹ️',
@@ -121,11 +127,21 @@ export default function RealTokenDeployer() {
       error: '❌',
       warning: '⚠️'
     }[type];
+    
+    // Add agent indicator for agent actions
+    const agentPrefix = isAgentAction || wallet.mode === 'agent' ? '🤖 [AGENT] ' : '';
+    const logMessage = `[${timestamp}] ${icon} ${agentPrefix}${message}`;
+    
     setLogs(prev => {
-      const newLogs = [...prev, `[${timestamp}] ${icon} ${message}`];
+      const newLogs = [...prev, logMessage];
       // Keep only the latest 250 entries
       return newLogs.length > 250 ? newLogs.slice(-250) : newLogs;
     });
+    
+    // Console logging for external monitoring
+    if (isAgentAction || wallet.mode === 'agent') {
+      console.log(`[TOKEN_LAB_AGENT] ${timestamp} - ${message}`);
+    }
   };
 
   const clearLogs = () => {
@@ -154,13 +170,180 @@ export default function RealTokenDeployer() {
   }, []);
 
   /**
+   * Extract session data from SAFU wallet using authenticated browser session
+   * This method opens a popup for the user to authenticate and extract session data
+   * DEPRECATED: This method is kept for backward compatibility
+   * Use authenticateWithWallet() for new implementations
+   */
+  const extractSafuSessionDataWithBrowser = async (password: string) => {
+    try {
+      addLog('🔍 Opening authenticated session extraction popup...', 'info');
+      
+      // Open popup to SAFU wallet for authenticated session extraction
+      const popup = window.open(
+        'http://localhost:3003?mode=agent-auth', 
+        'safu-agent-auth',
+        'width=500,height=400,scrollbars=no,resizable=no'
+      );
+
+      if (!popup) {
+        throw new Error('Could not open authentication popup. Please allow popups.');
+      }
+
+      return new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          popup.close();
+          reject(new Error('Authentication timeout - please try again'));
+        }, 30000); // 30 seconds for user to authenticate
+
+        // Listen for authenticated session data from popup
+        const messageHandler = (event: MessageEvent) => {
+          if (event.origin !== 'http://localhost:3003') return;
+          
+          if (event.data.type === 'SAFU_AGENT_AUTH_SUCCESS') {
+            clearTimeout(timeout);
+            popup.close();
+            window.removeEventListener('message', messageHandler);
+            
+            const { accessToken, sessionPassword, encryptedSeed, sessionKey, publicKey } = event.data.payload;
+            
+            if (!accessToken || !sessionPassword || !encryptedSeed) {
+              reject(new Error('Incomplete session data received from authenticated session'));
+              return;
+            }
+
+            addLog('✅ Authenticated session data extracted via popup', 'success');
+            resolve({
+              accessToken,
+              sessionPassword,
+              encryptedSeed,
+              sessionKey,
+              publicKey
+            });
+          } else if (event.data.type === 'SAFU_AGENT_AUTH_ERROR') {
+            clearTimeout(timeout);
+            popup.close();
+            window.removeEventListener('message', messageHandler);
+            reject(new Error(event.data.message || 'Authentication failed'));
+          }
+        };
+
+        window.addEventListener('message', messageHandler);
+
+        // Send authentication request with password via secure postMessage
+        popup.postMessage({
+          type: 'AGENT_AUTH_REQUEST',
+          origin: window.location.origin,
+          appName: 'Token Lab',
+          password: password // Secure - sent via postMessage, not URL
+        }, 'http://localhost:3003');
+      });
+
+    } catch (error) {
+      throw new Error(`Authenticated session extraction failed: ${error.message}`);
+    }
+  };
+
+  /**
+   * Authenticate with SAFU wallet and obtain session
+   */
+  const authenticateWithWallet = async (password: string): Promise<any> => {
+    addLog('🔐 Authenticating with SAFU wallet...', 'info');
+    
+    try {
+      // Step 1: Authenticate with wallet using password
+      const authResponse = await fetch('http://localhost:3003/api/auth', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          password,
+          appName: 'Token Lab',
+          origin: window.location.origin,
+          mode: 'agent'
+        })
+      });
+
+      if (!authResponse.ok) {
+        throw new Error(`Authentication failed: ${authResponse.statusText}`);
+      }
+
+      const authResult = await authResponse.json();
+      
+      if (!authResult.success) {
+        throw new Error(authResult.error || 'Authentication failed');
+      }
+
+      addLog('✅ Authentication successful', 'success');
+      return authResult; // Contains session data
+
+    } catch (error: any) {
+      addLog(`❌ Authentication failed: ${error.message}`, 'error');
+      throw error;
+    }
+  };
+
+  /**
    * Connect to SAFU wallet programmatically (no popup)
    */
   const connectToWalletAgent = async () => {
     try {
-      addLog('🔐 Connecting to SAFU wallet programmatically...', 'info');
+      addLog('Connecting to SAFU wallet programmatically...', 'info', true);
       
-      // Direct API call to wallet's connection endpoint
+      // Get authentication credentials - multiple methods for different use cases
+      let password: string;
+      
+      // Method 1: Check for environment variable (for automation/CI)
+      const envPassword = (window as any).__SAFU_AGENT_PASSWORD__;
+      if (envPassword) {
+        password = envPassword;
+        addLog('Using pre-configured credentials for automation', 'info', true);
+      } else {
+        // Method 2: Prompt user for password (interactive mode)
+        const userPassword = prompt('🤖 Agent Mode Authentication\n\nEnter your SAFU wallet password to establish a secure agent session:');
+        if (!userPassword) {
+          addLog('Agent connection cancelled - authentication required', 'error', true);
+          return;
+        }
+
+        // Validate password is not empty
+        if (userPassword.trim().length === 0) {
+          addLog('❌ Invalid password provided', 'error');
+          return;
+        }
+        
+        password = userPassword;
+      }
+
+      addLog('🔑 Authenticating with provided credentials...', 'info');
+      
+      // Security: Clear password from memory after use
+      const clearPassword = () => {
+        password = '';
+        if ((window as any).__SAFU_AGENT_PASSWORD__) {
+          delete (window as any).__SAFU_AGENT_PASSWORD__;
+        }
+      };
+      
+      // Try direct API authentication first, fallback to browser method
+      let sessionData;
+      try {
+        sessionData = await authenticateWithWallet(password);
+        addLog('✅ Session established via API', 'success');
+      } catch (apiError: any) {
+        addLog(`ℹ️ API authentication failed, trying browser method: ${apiError.message}`, 'info');
+        addLog('🌐 Opening authenticated browser session...', 'info');
+        
+        try {
+          sessionData = await extractSafuSessionDataWithBrowser(password);
+          addLog('✅ Session established via browser authentication', 'success');
+        } catch (browserError: any) {
+          throw new Error(`All authentication methods failed. API: ${apiError.message}, Browser: ${browserError.message}`);
+        }
+      }
+      
+      // Direct API call to wallet's connection endpoint with authenticated session
       const response = await fetch('http://localhost:3003/api/connect', {
         method: 'POST',
         headers: {
@@ -170,7 +353,10 @@ export default function RealTokenDeployer() {
           appName: 'Token Lab',
           description: 'Programmatic connection for automated deployment',
           origin: window.location.origin,
-          mode: 'agent'
+          mode: 'agent',
+          accessToken: sessionData.accessToken || sessionData.sessionKey,
+          sessionPassword: sessionData.sessionPassword,
+          encryptedSeed: sessionData.encryptedSeed
         })
       });
 
@@ -185,7 +371,8 @@ export default function RealTokenDeployer() {
           isConnected: true,
           publicKey: result.publicKey,
           network: result.network || 'futurenet',
-          mode: 'agent'
+          mode: 'agent',
+          sessionData: sessionData // Store session data for transaction signing
         });
         setTokenConfig(prev => ({ ...prev, admin: result.publicKey }));
         
@@ -203,6 +390,16 @@ export default function RealTokenDeployer() {
       
       if (errorMessage.includes('fetch')) {
         addLog('Make sure SAFU wallet is running at localhost:3003', 'info');
+      }
+    } finally {
+      // Security: Always clear credentials from memory
+      try {
+        password = '';
+        if ((window as any).__SAFU_AGENT_PASSWORD__) {
+          delete (window as any).__SAFU_AGENT_PASSWORD__;
+        }
+      } catch (cleanupError) {
+        // Ignore cleanup errors
       }
     }
   };
@@ -390,16 +587,30 @@ export default function RealTokenDeployer() {
       setDeploymentStep('Sending to wallet for signing...');
       addLog('📤 Sending transaction to SAFU wallet for signing...', 'info');
       
-      // Use popup signing for user confirmation and transparency
-      addLog('🔐 Opening wallet popup for user confirmation...', 'info');
-      addLog('👤 Please review and confirm the transaction in the popup', 'info');
-      const signingResult = await signTransactionWithPopup(transactionXdr, {
-        description: `Deploy SEP-41 Token: ${tokenConfig.name} (${tokenConfig.symbol})`,
-        networkPassphrase: FUTURENET_CONFIG.networkPassphrase,
-        network: 'futurenet',
-        appName: 'Token Lab',
-        keepPopupOpen: true // Keep popup open after signing for user to see result
-      });
+      // Use appropriate signing method based on wallet mode
+      const signingResult = await (wallet.mode === 'agent' 
+        ? (() => {
+            addLog('🤖 Signing transaction programmatically with agent...', 'info');
+            return signTransactionAgent(transactionXdr, {
+              description: `Deploy SEP-41 Token: ${tokenConfig.name} (${tokenConfig.symbol})`,
+              networkPassphrase: FUTURENET_CONFIG.networkPassphrase,
+              network: 'futurenet',
+              appName: 'Token Lab',
+              sessionData: wallet.sessionData
+            });
+          })()
+        : (() => {
+            addLog('🔐 Opening wallet popup for user confirmation...', 'info');
+            addLog('👤 Please review and confirm the transaction in the popup', 'info');
+            return signTransactionWithPopup(transactionXdr, {
+              description: `Deploy SEP-41 Token: ${tokenConfig.name} (${tokenConfig.symbol})`,
+              networkPassphrase: FUTURENET_CONFIG.networkPassphrase,
+              network: 'futurenet',
+              appName: 'Token Lab',
+              keepPopupOpen: true // Keep popup open after signing for user to see result
+            });
+          })()
+      );
       
       const signedXdr = signingResult.signedTransactionXdr;
       
@@ -638,7 +849,8 @@ export default function RealTokenDeployer() {
             description: `Transfer ${transferAmount} ${selectedTokenForTransfer.config.symbol} to ${transferRecipient.substring(0, 8)}...`,
             networkPassphrase: FUTURENET_CONFIG.networkPassphrase,
             network: 'futurenet',
-            appName: 'Token Lab'
+            appName: 'Token Lab',
+            sessionData: wallet.sessionData
           })
         : signTransactionWithPopup(transferXdr, {
             description: `Transfer ${transferAmount} ${selectedTokenForTransfer.config.symbol} to ${transferRecipient.substring(0, 8)}...`,
@@ -775,6 +987,17 @@ export default function RealTokenDeployer() {
                   <span className="font-mono text-xs">{wallet.publicKey?.substring(0, 8)}...{wallet.publicKey?.substring(-4)}</span>
                 </div>
               </div>
+              {wallet.mode === 'agent' && (
+                <div className="bg-blue-900/20 border border-blue-600/30 rounded px-3 py-2">
+                  <div className="flex items-center gap-2 text-blue-400 text-sm">
+                    <span className="text-xs">🤖</span>
+                    <span className="font-semibold text-xs">AGENT MODE</span>
+                  </div>
+                  <div className="text-xs text-blue-300 mt-1">
+                    Programmatic control active
+                  </div>
+                </div>
+              )}
               <Button 
                 onClick={disconnectWallet}
                 size="sm"

@@ -445,32 +445,42 @@ export function getWalletCapabilities(method: WalletIntegrationMethod): WalletCa
  */
 export async function signTransactionAgent(
   transactionXdr: string,
-  options: PopupSigningOptions = {}
+  options: PopupSigningOptions & { sessionData?: any } = {}
 ): Promise<PopupSigningResult> {
   
   const {
     description = 'Sign Transaction (Agent)',
     networkPassphrase = 'Test SDF Future Network ; October 2022', // Futurenet
     network = 'futurenet',
-    appName = 'Token Lab'
+    appName = 'Token Lab',
+    sessionData
   } = options;
   
   try {
-    // Direct API call to wallet's signing endpoint
+    // Direct API call to wallet's signing endpoint with authentication
+    const requestBody: any = {
+      transactionXdr,
+      networkPassphrase,
+      network,
+      description,
+      appName,
+      mode: 'agent',
+      origin: window.location.origin
+    };
+
+    // Add session data for authentication if available
+    if (sessionData) {
+      requestBody.accessToken = sessionData.accessToken;
+      requestBody.sessionPassword = sessionData.sessionPassword;
+      requestBody.encryptedSeed = sessionData.encryptedSeed;
+    }
+
     const response = await fetch('http://localhost:3003/api/sign', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        transactionXdr,
-        networkPassphrase,
-        network,
-        description,
-        appName,
-        mode: 'agent',
-        origin: window.location.origin
-      })
+      body: JSON.stringify(requestBody)
     });
 
     if (!response.ok) {

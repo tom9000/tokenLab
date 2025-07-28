@@ -48,6 +48,10 @@ The `window.getSafuSessionKey()` function is automatically available once the wa
 - Token Lab running on `http://localhost:3005`
 - Playwright MCP available for browser automation
 
+if you need to restart either app, please use:
+~/restart-wallet.sh
+~/restart-tokenlab.sh
+
 ## Step-by-Step Workflow
 
 ### Step 1: Unlock SAFU Wallet and Extract Session Data
