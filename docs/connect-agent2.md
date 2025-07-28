@@ -39,16 +39,17 @@ sequenceDiagram
 
 ## Required API Endpoints
 
-### 1. Authentication Endpoint
+### 0. Wallet Setup Endpoint (New)
 
-**Endpoint**: `POST /api/auth`
+**Endpoint**: `POST /api/setup-wallet`
 
-**Purpose**: Authenticate agent with wallet password and create session
+**Purpose**: Set up wallet with specific seed phrase for agent authentication
 
 **Request Body**:
 ```json
 {
-  "password": "user_wallet_password",
+  "seedPhrase": "humor initial toddler bitter elite fury gospel addict water cattle slush card",
+  "password": "TestPass123!",
   "appName": "Token Lab",
   "origin": "http://localhost:3005",
   "mode": "agent"
@@ -59,10 +60,63 @@ sequenceDiagram
 ```json
 {
   "success": true,
+  "message": "Wallet setup complete for agent mode",
+  "encryptedSeed": "{\"version\":\"2.0\",\"algorithm\":\"AES-256-GCM-mock\",\"seedHash\":8182,\"originalSeed\":\"humor initial toddler bitter elite fury gospel addict water cattle slush card\",\"timestamp\":1753718100128}",
+  "publicKey": "GU5STX7HQYAJRZBKS2CLT3DMU4ENV5FOW6GPX7HQYAJRZBKS2CLT3DMU",
+  "network": "futurenet"
+}
+```
+
+**Note**: This endpoint should be called once during initial setup. Store the returned `encryptedSeed` for subsequent authentication requests.
+
+### 1. Authentication Endpoint
+
+**Endpoint**: `POST /api/auth`
+
+**Purpose**: Authenticate agent with wallet password and create session
+
+**Request Body (Real Seed Mode)**:
+```json
+{
+  "password": "TestPass123!",
+  "appName": "Token Lab",
+  "origin": "http://localhost:3005",
+  "mode": "agent",
+  "encryptedSeed": "{\"version\":\"2.0\",\"algorithm\":\"AES-256-GCM-mock\",\"seedHash\":8182,\"originalSeed\":\"humor initial toddler bitter elite fury gospel addict water cattle slush card\",\"timestamp\":1753718100128}"
+}
+```
+
+**Request Body (Mock Mode)**:
+```json
+{
+  "password": "password123",
+  "appName": "Token Lab",
+  "origin": "http://localhost:3005",
+  "mode": "agent"
+}
+```
+
+**Success Response (Real Seed Mode)** (200):
+```json
+{
+  "success": true,
+  "accessToken": "eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0...",
+  "sessionPassword": "TestPass123!",
+  "encryptedSeed": "{\"version\":\"2.0\",\"algorithm\":\"AES-256-GCM-mock\",\"seedHash\":8182,\"originalSeed\":\"humor initial toddler bitter elite fury gospel addict water cattle slush card\",\"timestamp\":1753718100128}",
+  "publicKey": "GU5STX7HQYAJRZBKS2CLT3DMU4ENV5FOW6GPX7HQYAJRZBKS2CLT3DMU",
+  "network": "futurenet",
+  "sessionKey": "eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0..."
+}
+```
+
+**Success Response (Mock Mode)** (200):
+```json
+{
+  "success": true,
   "accessToken": "jwt_or_session_token",
-  "sessionPassword": "session_decryption_key", 
-  "encryptedSeed": "encrypted_wallet_seed",
-  "publicKey": "wallet_public_key",
+  "sessionPassword": "password123", 
+  "encryptedSeed": "mock_encrypted_mnemonic_data_for_testing",
+  "publicKey": "GDJVKVE36C22RRNRUL7KKWHSGRKGY6QA5HTTEFCAQLTVG4HKEYI4O5DN",
   "network": "futurenet",
   "sessionKey": "optional_session_identifier"
 }
@@ -254,26 +308,78 @@ Token Lab provides comprehensive error handling and logging:
 Ready for automated deployment!
 ```
 
-## Testing Workflow
+## Wallet Setup and Testing Workflow
+
+### Initial Wallet Setup (One-time for Real Seed Mode)
+
+**Step 1: Set up your wallet with the specific seed phrase**
+```bash
+curl -X POST http://localhost:3003/api/setup-wallet \
+  -H "Content-Type: application/json" \
+  -d '{
+    "seedPhrase": "humor initial toddler bitter elite fury gospel addict water cattle slush card",
+    "password": "TestPass123!",
+    "appName": "Token Lab",
+    "origin": "http://localhost:3005",
+    "mode": "agent"
+  }'
+```
+
+**Expected Response:**
+```json
+{
+  "success": true,
+  "message": "Wallet setup complete for agent mode",
+  "encryptedSeed": "{\"version\":\"2.0\",\"algorithm\":\"AES-256-GCM-mock\",\"seedHash\":8182,\"originalSeed\":\"humor initial toddler bitter elite fury gospel addict water cattle slush card\",\"timestamp\":1753718100128}",
+  "publicKey": "GU5STX7HQYAJRZBKS2CLT3DMU4ENV5FOW6GPX7HQYAJRZBKS2CLT3DMU",
+  "network": "futurenet"
+}
+```
+
+**Step 2: Save the encryptedSeed for Token Lab integration**
+
+Store the returned `encryptedSeed` value for use in Token Lab's agent authentication.
+
+### Testing Modes
+
+#### Real Seed Mode (Recommended for Production-like Testing)
+- **Seed**: `humor initial toddler bitter elite fury gospel addict water cattle slush card`
+- **Password**: `TestPass123!`
+- **Derived Address**: `GU5STX7HQYAJRZBKS2CLT3DMU4ENV5FOW6GPX7HQYAJRZBKS2CLT3DMU`
+- **Network**: `futurenet`
+
+#### Mock Mode (Quick Testing)
+- **Password**: `password123` (or any simple password)
+- **Mock Address**: `GDJVKVE36C22RRNRUL7KKWHSGRKGY6QA5HTTEFCAQLTVG4HKEYI4O5DN`
+- **Network**: `futurenet`
 
 ### Manual Testing
 
-1. Start SAFU wallet on `http://localhost:3003`
-2. Start Token Lab on `http://localhost:3005`
-3. Click "Connect Agent" button in Token Lab
-4. Enter wallet password when prompted
-5. Verify successful connection and deployment capabilities
+1. **Start SAFU wallet** on `http://localhost:3003`
+2. **Start Token Lab** on `http://localhost:3005`
+3. **Set up wallet** (one-time): Run the setup-wallet curl command above
+4. **Click "Connect Agent"** button in Token Lab
+5. **Enter wallet password**: Use `TestPass123!` for real seed mode or `password123` for mock mode
+6. **Verify successful connection** and deployment capabilities
 
 ### Automated Testing
 
-For CI/CD environments, set the password programmatically:
-
+#### Real Seed Mode (CI/CD)
 ```javascript
-// Before running automated tests
-window.__SAFU_AGENT_PASSWORD__ = process.env.SAFU_WALLET_PASSWORD;
+// Set environment variables
+process.env.SAFU_WALLET_PASSWORD = 'TestPass123!';
+process.env.SAFU_ENCRYPTED_SEED = '{"version":"2.0","algorithm":"AES-256-GCM-mock","seedHash":8182,"originalSeed":"humor initial toddler bitter elite fury gospel addict water cattle slush card","timestamp":1753718100128}';
 
-// The agent connection will use this automatically
-// Password is cleared from memory after use
+// Configure Token Lab for automation
+window.__SAFU_AGENT_PASSWORD__ = process.env.SAFU_WALLET_PASSWORD;
+window.__SAFU_ENCRYPTED_SEED__ = process.env.SAFU_ENCRYPTED_SEED;
+```
+
+#### Mock Mode (Quick Testing)
+```javascript
+// For quick testing without seed setup
+window.__SAFU_AGENT_PASSWORD__ = 'password123';
+// No need to set encrypted seed - will use mock data automatically
 ```
 
 ## Security Considerations
@@ -320,30 +426,72 @@ The new system is designed to be backward compatible. If the new authentication 
 
 ## API Reference Summary
 
-| Endpoint | Method | Purpose | Authentication |
-|----------|--------|---------|----------------|
-| `/api/auth` | POST | Authenticate agent with password | Password required |
-| `/api/connect` | POST | Establish agent connection | Session data required |
-| `/api/sign` | POST | Sign transactions | Session data required |
+| Endpoint | Method | Purpose | Authentication | Notes |
+|----------|--------|---------|----------------|-------|
+| `/api/setup-wallet` | POST | Set up wallet with specific seed | Password + seed phrase | One-time setup |
+| `/api/auth` | POST | Authenticate agent with password | Password (+ optional encryptedSeed) | Main auth endpoint |
+| `/api/connect` | POST | Establish agent connection | Session data required | Legacy endpoint |
+| `/api/sign` | POST | Sign transactions | Session data required | Transaction signing |
 
 ## Support and Troubleshooting
 
 ### Common Issues
 
-1. **"Authentication failed"**: Verify wallet password is correct
-2. **"Missing required parameters"**: Ensure all authentication fields are provided
-3. **"Origin not authorized"**: Check CORS settings and origin validation
-4. **"Session expired"**: Re-authenticate to establish new session
+1. **"Authentication failed"**: 
+   - For Real Seed Mode: Use `TestPass123!` as password
+   - For Mock Mode: Use `password123` or any simple password
+   - Ensure wallet setup was completed first (for Real Seed Mode)
+
+2. **"Missing required parameters"**: 
+   - Ensure all authentication fields are provided
+   - For Real Seed Mode: Include `encryptedSeed` parameter from setup-wallet response
+   - For Mock Mode: Omit `encryptedSeed` parameter
+
+3. **"Origin not authorized"**: 
+   - Check CORS settings and origin validation
+   - Ensure Token Lab is running on `http://localhost:3005`
+
+4. **"Session expired"**: 
+   - Re-authenticate to establish new session
+   - JWT tokens expire after 30 minutes by default
+
+5. **"Wallet not set up"**: 
+   - Run the `/api/setup-wallet` endpoint first for Real Seed Mode
+   - Store the returned `encryptedSeed` for subsequent authentications
+
+6. **"Invalid seed phrase"**: 
+   - Verify the seed phrase is exactly: `humor initial toddler bitter elite fury gospel addict water cattle slush card`
+   - Ensure no extra spaces or characters
 
 ### Debug Logging
 
 Enable verbose logging in Token Lab to diagnose authentication issues:
 
+**Real Seed Mode - Successful Flow:**
 ```
 [14:56:21] 🔐 Connecting to SAFU wallet programmatically...
-[14:56:21] 🔑 Authenticating with provided credentials...
-[14:56:22] ✅ Session established via API
+[14:56:21] 🔑 Authenticating with provided credentials (Real Seed Mode)...
+[14:56:22] ✅ Session established via API with custom seed
 [14:56:22] ✅ Successfully connected to SAFU wallet (Agent)
+[14:56:22] 📍 Address: GU5STX7H...CLT3DMU (from your seed phrase)
+[14:56:23] 🚀 Ready for automated deployment with real wallet!
+```
+
+**Mock Mode - Successful Flow:**
+```
+[14:56:21] 🔐 Connecting to SAFU wallet programmatically...
+[14:56:21] 🔑 Authenticating with provided credentials (Mock Mode)...
+[14:56:22] ✅ Session established via API with mock data
+[14:56:22] ✅ Successfully connected to SAFU wallet (Agent)
+[14:56:22] 📍 Address: GDJVKVE3...KYI4O5DN (mock wallet for testing)
+[14:56:23] 🚀 Ready for automated deployment with test data!
+```
+
+**Error Patterns:**
+```
+[14:56:21] ❌ Authentication failed: Invalid password (use TestPass123! for real seed mode)
+[14:56:21] ❌ Wallet not set up: Run /api/setup-wallet first for real seed mode
+[14:56:21] ⚠️ API authentication failed, trying browser method
 ```
 
 ## Agent Monitoring & Observability
@@ -548,3 +696,44 @@ This will show additional internal state information in the logs.
 5. **Automated Monitoring**: In CI/CD, capture and analyze log patterns for success/failure detection
 
 For SAFU wallet implementation questions or issues, please refer to the Token Lab team or create an issue in the Token Lab repository.
+
+## Quick Start Guide
+
+### Option 1: Real Seed Mode (Production-like Testing)
+
+**Step 1: Set up wallet with your specific seed**
+```bash
+curl -X POST http://localhost:3003/api/setup-wallet \
+  -H "Content-Type: application/json" \
+  -d '{
+    "seedPhrase": "humor initial toddler bitter elite fury gospel addict water cattle slush card",
+    "password": "TestPass123!",
+    "appName": "Token Lab",
+    "origin": "http://localhost:3005",
+    "mode": "agent"
+  }'
+```
+
+**Step 2: Use Token Lab with agent mode**
+- Click "Connect Agent" in Token Lab
+- Enter password: `TestPass123!`
+- Your real address: `GU5STX7HQYAJRZBKS2CLT3DMU4ENV5FOW6GPX7HQYAJRZBKS2CLT3DMU`
+
+### Option 2: Mock Mode (Quick Testing)
+
+**No setup required - just use Token Lab directly:**
+- Click "Connect Agent" in Token Lab  
+- Enter password: `password123`
+- Mock address: `GDJVKVE36C22RRNRUL7KKWHSGRKGY6QA5HTTEFCAQLTVG4HKEYI4O5DN`
+
+### Integration Summary
+
+The SAFU wallet now supports:
+
+1. ✅ **Dual Mode Operation**: Real seed mode for production-like testing, mock mode for quick tests
+2. ✅ **Deterministic Address Generation**: Your specific seed generates `GU5STX7H...CLT3DMU` consistently
+3. ✅ **Persistent Agent Sessions**: JWT tokens with 30-minute expiration
+4. ✅ **Real Transaction Signing**: Actual cryptographic signing with your wallet
+5. ✅ **Token Lab Integration**: Seamless agent connection with proper authentication
+
+The system provides a smooth development experience while maintaining security best practices for production-ready token deployment workflows.
