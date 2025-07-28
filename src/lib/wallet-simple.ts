@@ -19,6 +19,8 @@ export interface PopupSigningOptions {
   appName?: string;
   /** Timeout in milliseconds (default: 5 minutes) */
   timeout?: number;
+  /** Keep popup open after signing (default: false) */
+  keepPopupOpen?: boolean;
 }
 
 export interface PopupSigningResult {
@@ -71,7 +73,8 @@ export async function signTransactionWithPopup(
       networkPassphrase = 'Test SDF Future Network ; October 2022', // Futurenet
       network = 'futurenet',
       appName = 'Token Lab',
-      timeout = 300000 // 5 minutes
+      timeout = 300000, // 5 minutes
+      keepPopupOpen = false
     } = options;
     
     // Build popup URL using SAFU wallet's industry-standard format
@@ -125,7 +128,8 @@ export async function signTransactionWithPopup(
         clearInterval(popupCheckInterval);
         clearTimeout(timeoutHandle);
         
-        if (!popup.closed) {
+        // Only close popup if keepPopupOpen is false
+        if (!popup.closed && !keepPopupOpen) {
           popup.close();
         }
         
@@ -168,7 +172,8 @@ export async function signTransactionWithPopup(
       clearInterval(popupCheckInterval);
       window.removeEventListener('message', messageHandler);
       
-      if (!popup.closed) {
+      // Only close popup on timeout if keepPopupOpen is false
+      if (!popup.closed && !keepPopupOpen) {
         popup.close();
       }
       

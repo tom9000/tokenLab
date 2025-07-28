@@ -1,13 +1,13 @@
 // Real contract deployment service for Token Lab
 import {
   Contract,
-  SorobanRpc,
   TransactionBuilder,
   Networks,
   BASE_FEE,
   nativeToScVal,
   Address,
   Keypair,
+  rpc,
 } from '@stellar/stellar-sdk';
 
 export interface TokenConfig {
@@ -48,12 +48,12 @@ const NETWORKS = {
 };
 
 export class ContractDeploymentService {
-  private server: SorobanRpc.Server;
+  private server: rpc.Server;
   private networkConfig: typeof NETWORKS.futurenet;
 
   constructor(network: 'futurenet' | 'testnet' = 'futurenet') {
     this.networkConfig = NETWORKS[network];
-    this.server = new SorobanRpc.Server(this.networkConfig.rpcUrl, {
+    this.server = new rpc.Server(this.networkConfig.rpcUrl, {
       allowHttp: this.networkConfig.rpcUrl.startsWith('http://'),
     });
   }
