@@ -1,0 +1,12 @@
+/Users/mac/code/-scdev/tokenLab/contracts/sep41_token/target/owl/debug/deps/libecdsa-f72749ed74e3a518.rmeta: /Users/mac/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ecdsa-0.16.9/src/lib.rs /Users/mac/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ecdsa-0.16.9/src/normalized.rs /Users/mac/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ecdsa-0.16.9/src/recovery.rs /Users/mac/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ecdsa-0.16.9/src/der.rs /Users/mac/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ecdsa-0.16.9/src/hazmat.rs /Users/mac/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ecdsa-0.16.9/src/signing.rs /Users/mac/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ecdsa-0.16.9/src/verifying.rs /Users/mac/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ecdsa-0.16.9/src/../README.md
+
+/Users/mac/code/-scdev/tokenLab/contracts/sep41_token/target/owl/debug/deps/ecdsa-f72749ed74e3a518.d: /Users/mac/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ecdsa-0.16.9/src/lib.rs /Users/mac/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ecdsa-0.16.9/src/normalized.rs /Users/mac/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ecdsa-0.16.9/src/recovery.rs /Users/mac/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ecdsa-0.16.9/src/der.rs /Users/mac/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ecdsa-0.16.9/src/hazmat.rs /Users/mac/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ecdsa-0.16.9/src/signing.rs /Users/mac/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ecdsa-0.16.9/src/verifying.rs /Users/mac/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ecdsa-0.16.9/src/../README.md
+
+/Users/mac/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ecdsa-0.16.9/src/lib.rs:
+/Users/mac/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ecdsa-0.16.9/src/normalized.rs:
+/Users/mac/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ecdsa-0.16.9/src/recovery.rs:
+/Users/mac/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ecdsa-0.16.9/src/der.rs:
+/Users/mac/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ecdsa-0.16.9/src/hazmat.rs:
+/Users/mac/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ecdsa-0.16.9/src/signing.rs:
+/Users/mac/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ecdsa-0.16.9/src/verifying.rs:
+/Users/mac/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ecdsa-0.16.9/src/../README.md:

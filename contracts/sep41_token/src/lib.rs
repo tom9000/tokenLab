@@ -1,6 +1,12 @@
 #![no_std]
 use soroban_sdk::{contract, contractimpl, Address, Env, String, symbol_short};
 
+mod admin;
+mod allowance;
+mod balance;
+mod metadata;
+mod storage_types;
+
 #[cfg(test)]
 mod test;
 

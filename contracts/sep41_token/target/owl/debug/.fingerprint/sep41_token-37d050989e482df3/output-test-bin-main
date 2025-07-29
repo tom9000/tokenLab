@@ -1,0 +1,12 @@
+2025-07-27T16:19:33.159Z INFO  [rustowlc::core] start borrowck of DefId(0:3 ~ main[61bc]::main)
+2025-07-27T16:19:33.186Z INFO  [rustowlc::core::analyze] facts of DefId(0:3 ~ main[61bc]::main) prepared; start analyze of DefId(0:3 ~ main[61bc]::main)
+2025-07-27T16:19:33.187Z INFO  [rustowlc::core::analyze] start re-computing borrow check with dump: true
+2025-07-27T16:19:33.187Z INFO  [rustowlc::core] borrow checked: 1 / 2
+2025-07-27T16:19:33.187Z INFO  [rustowlc::core] start borrowck of DefId(0:4 ~ main[61bc]::main#1)
+2025-07-27T16:19:33.188Z INFO  [rustowlc::core::analyze] facts of DefId(0:4 ~ main[61bc]::main#1) prepared; start analyze of DefId(0:4 ~ main[61bc]::main#1)
+2025-07-27T16:19:33.188Z INFO  [rustowlc::core] borrow checked: 2 / 2
+2025-07-27T16:19:33.188Z INFO  [rustowlc::core::analyze] start re-computing borrow check with dump: true
+2025-07-27T16:19:33.190Z INFO  [rustowlc::core::analyze] borrow check finished
+2025-07-27T16:19:33.190Z INFO  [rustowlc::core::analyze] borrow check finished
+2025-07-27T16:19:33.301Z INFO  [rustowlc::core] analyzed one item of /Users/mac/code/-scdev/tokenLab/contracts/sep41_token/src/bin/main.rs
+2025-07-27T16:19:33.302Z INFO  [rustowlc::core] analyzed one item of /Users/mac/code/-scdev/tokenLab/contracts/sep41_token/src/bin/main.rs

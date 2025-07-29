@@ -1274,20 +1274,6 @@ export default function RealTokenDeployer() {
                 </div>
               )}
             </Button>
-            
-            <div className="bg-yellow-900/20 border border-yellow-600/30 rounded p-3 mt-4">
-              <div className="text-yellow-400 text-xs">
-                ⚠️ <strong>Current Status:</strong> Deployment partially simulated due to XDR compatibility issues
-              </div>
-              <div className="text-gray-400 text-xs mt-1">
-                • ✅ WASM upload works (real blockchain transaction)<br/>
-                • ❌ Contract creation simulated (to avoid SDK v13.3.0 XDR parsing errors)<br/>
-                • ❌ Token transfers simulated (no real contract to interact with)
-              </div>
-              <div className="text-blue-400 text-xs mt-2">
-                💡 <strong>Solution:</strong> Update Stellar SDK or use compatibility layer for real deployment
-              </div>
-            </div>
           </CardContent>
         </Card>
 

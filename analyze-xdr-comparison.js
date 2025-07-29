@@ -25,8 +25,16 @@ const FUTURENET_CONFIG = {
   sorobanRpcUrl: 'https://rpc-futurenet.stellar.org'
 };
 
-// SEP-41 WASM data (same as used in tests)
-const SEP41_WASM_BASE64 = `AGFzbQEAAAABLAhgAX8AYAAAYAF/AX9gAn9/AGACf38Bf2ADf39/AGADf39/AX9gBH9/f38AAgwBAWwBMAAAAQAAAwsKAAECAwQFBgcHBAAEBQFwAQEBBQMBAAEGCQF/AUGAgMAAC2daDDxpbnN0cnVjdGlvbj48aW5zdHJ1Y3Rpb24+AXYTaW5pdGlhbGl6ZV90YWJsZQEAAVsDaW5zdHJ1Y3Rpb24+PGluc3RydWN0aW9uPgAQX19zdGFja19wb2ludGVyBAABLgQAQYCAwAALJwEAAAABAAAAAQAAAAEAAAABAAAAAQAAAABAAAAAQAAAAEAAAABAAAAAQAAAAEAAAEBCvkDCgUAQQALxgJuYW1lAABAAYICNwAAAAl0b2tlbi5yczAAAAAOdG9rZW5fc2VjdXJpdHkwCWluaXRpYWxpemUxCG5hbWVfc2VjMgdzeW1ib2wuM2RlY2ltYWxzNAh0b3RhbF9zdXBwbHk1B2JhbGFuY2U2BG1pbnQ3CHRyYW5zZmVyOAplbmRfa2V5X2hhc2g5CWNhbGxvc2VjdGlvbjEwEmFsbGV3YW5jZV9wcm92aWRlcjExDAAxEg==`;
+// Load SEP-41 WASM data from file
+function loadWASMBase64() {
+  try {
+    return fs.readFileSync('/Users/mac/code/-scdev/tokenLab/sep41_wasm_base64.txt', 'utf8').trim();
+  } catch (error) {
+    console.error('Could not load WASM file, using fallback');
+    // Fallback to working WASM data
+    return 'AGFzbQEAAAABPAtgAn5+AX5gA35+fgF+YAF+AX5gAn9+AGACfn4Bf2ADfn5+AGABfwBgAn5+AGAEfn5+fgF+YAABfmAAAAIxCAFsATAAAAAAAwsKAAECAwQFBgcHBAAEBQFwAQEBBQMBAAEGCQF/AUGAgMAAC2daDDxpbnN0cnVjdGlvbj48aW5zdHJ1Y3Rpb24+AXYTaW5pdGlhbGl6ZV90YWJsZQEAAVsDaW5zdHJ1Y3Rpb24+PGluc3RydWN0aW9uPgAQX19zdGFja19wb2ludGVyBAABLgQAQYCAwAALJwEAAAABAAAAAQAAAAEAAAABAAAAAQAAAAEAAAABAAAAAQAAAAEAAAABAAAEBCvkDCgUAQQALxgJuYW1lAABAAYICNwAAAAl0b2tlbi5yczAAAAAOdG9rZW5fc2VjdXJpdHkwCWluaXRpYWxpemUxCG5hbWVfc2VjMgdzeW1ib2wuM2RlY2ltYWxzNAh0b3RhbF9zdXBwbHk1B2JhbGFuY2U2BG1pbnQ3CHRyYW5zZmVyOAplbmRfa2V5X2hhc2g5CWNhbGxfc2VjdGlvbjEwEmFsbGV3YW5jZV9wcm92aWRlcjExDAAxEg==';
+  }
+}
 
 class XDRComparator {
   constructor() {
@@ -40,7 +48,8 @@ class XDRComparator {
     console.log('🔧 Generating SAFU-style deployment transaction...\n');
 
     try {
-      const wasmBuffer = Uint8Array.from(atob(SEP41_WASM_BASE64), c => c.charCodeAt(0));
+      const wasmBase64 = loadWASMBase64();
+      const wasmBuffer = Uint8Array.from(atob(wasmBase64), c => c.charCodeAt(0));
       console.log(`📦 WASM size: ${wasmBuffer.length} bytes`);
 
       // Get account
@@ -92,7 +101,8 @@ class XDRComparator {
     console.log('🔧 Generating Freighter-style deployment transaction...\n');
 
     try {
-      const wasmBuffer = Uint8Array.from(atob(SEP41_WASM_BASE64), c => c.charCodeAt(0));
+      const wasmBase64 = loadWASMBase64();
+      const wasmBuffer = Uint8Array.from(atob(wasmBase64), c => c.charCodeAt(0));
       
       // Get account
       const sourceAccount = await this.server.getAccount(accountAddress);
