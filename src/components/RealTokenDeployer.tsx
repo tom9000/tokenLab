@@ -1211,7 +1211,8 @@ export default function RealTokenDeployer() {
   return (
     <div className="min-h-screen bg-gray-950">
       {/* Header with Wallet Connection - Full width, buttons right-aligned */}
-      <div className="w-full px-6 py-6 flex items-center justify-between">
+      <div className="w-full px-6 py-6 flex justify-center">
+        <div className="w-full max-w-[900px] flex items-center justify-between">
         <div className="bg-green-900/20 border border-green-600/30 rounded p-3">
           <div className="flex items-center gap-2 text-green-400 text-sm">
             <Zap className="w-4 h-4" />
@@ -1225,7 +1226,20 @@ export default function RealTokenDeployer() {
               <div className="bg-green-900/20 border border-green-600/30 rounded px-3 py-2">
                 <div className="flex items-center gap-2 text-green-400 text-sm">
                   <CheckCircle className="w-4 h-4" />
-                  <span className="font-mono text-xs">{wallet.publicKey?.substring(0, 8)}...{wallet.publicKey?.substring(-4)}</span>
+                  <span className="font-mono text-xs">{wallet.publicKey?.substring(0, 8)}...{wallet.publicKey?.slice(-8)}</span>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => {
+                      if (wallet.publicKey) {
+                        navigator.clipboard.writeText(wallet.publicKey);
+                        addLog(`📋 Copied address: ${wallet.publicKey}`, 'info');
+                      }
+                    }}
+                    className="h-6 w-8 px-1 text-green-400 hover:bg-green-900/30"
+                  >
+                    <Copy className="w-4 h-4" />
+                  </Button>
                 </div>
               </div>
               {wallet.mode === 'agent' && (
@@ -1279,6 +1293,7 @@ export default function RealTokenDeployer() {
               </Button>
             </div>
           )}
+        </div>
         </div>
       </div>
 
@@ -1423,62 +1438,48 @@ export default function RealTokenDeployer() {
                           </div>
 
                           {/* Transfer Tokens Panel - Above Manage Token */}
-                          {selectedTokenForTransfer && selectedTokenForTransfer.contractId === token.contractId && (
-                            <div className="mt-4">
-                              <div className="border border-gray-700 rounded p-4 space-y-4 bg-gray-800/50">
-                                <div className="flex items-center gap-2 mb-3">
-                                  <Send className="w-4 h-4 text-green-400" />
-                                  <span className="text-gray-300 text-sm font-medium">Transfer {selectedTokenForTransfer.config.symbol} Tokens</span>
-                                </div>
+                          <div className="mt-4">
+                            <div className="border border-gray-700 rounded p-4 space-y-4 bg-gray-800/50">
+                              <div className="flex items-center gap-2 mb-3">
+                                <Send className="w-4 h-4 text-green-400" />
+                                <span className="text-gray-300 text-sm font-medium">Transfer {token.config.symbol} Tokens</span>
+                              </div>
 
-                                <div className="space-y-2">
-                                  <Label className="text-gray-400 text-xs">Recipient Address</Label>
+                              <div className="space-y-2">
+                                <Label className="text-gray-400 text-xs">Recipient Address</Label>
+                                <Input
+                                  value={transferRecipient}
+                                  onChange={(e) => setTransferRecipient(e.target.value)}
+                                  placeholder="GXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+                                  className="font-mono text-xs bg-black border-current/20 text-gray-300 h-6"
+                                  maxLength={56}
+                                />
+                              </div>
+
+                              <div className="flex gap-1 items-end mt-2">
+                                <div className="flex-1 space-y-1">
+                                  <Label className="text-gray-400 text-xs">Amount</Label>
                                   <Input
-                                    value={transferRecipient}
-                                    onChange={(e) => setTransferRecipient(e.target.value)}
-                                    placeholder="GXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
-                                    className="font-mono text-xs bg-black border-current/20 text-gray-300 h-6"
-                                    maxLength={56}
+                                    value={transferAmount}
+                                    onChange={(e) => setTransferAmount(e.target.value)}
+                                    placeholder="100"
+                                    className="bg-black border-current/20 text-gray-300 text-xs h-6"
+                                    type="number"
+                                    min="0.0000001"
+                                    step="0.0000001"
                                   />
                                 </div>
-
-                                <div className="flex gap-1 items-end mt-2">
-                                  <div className="flex-1 space-y-1">
-                                    <Label className="text-gray-400 text-xs">Amount</Label>
-                                    <Input
-                                      value={transferAmount}
-                                      onChange={(e) => setTransferAmount(e.target.value)}
-                                      placeholder="100"
-                                      className="bg-black border-current/20 text-gray-300 text-xs h-6"
-                                      type="number"
-                                      min="0.0000001"
-                                      step="0.0000001"
-                                    />
-                                  </div>
-                                  <Button 
-                                    onClick={executeTokenTransfer}
-                                    disabled={!wallet.isConnected || !transferRecipient || !transferAmount}
-                                    className="bg-blue-600 hover:bg-blue-500 text-xs h-6 px-3 disabled:bg-blue-600 disabled:opacity-50"
-                                  >
-                                    Send
-                                  </Button>
-                                </div>
-
-                                <div className="flex gap-1 mt-2">
-                                  <Button 
-                                    onClick={() => testTokenTransfer(token)}
-                                    disabled={!wallet.isConnected}
-                                    size="sm"
-                                    variant="outline"
-                                    className="text-xs"
-                                  >
-                                    <Send className="w-3 h-3 mr-1" />
-                                    Transfer Tokens
-                                  </Button>
-                                </div>
+                                <Button 
+                                  onClick={() => executeTokenTransfer(token)}
+                                  disabled={!wallet.isConnected || !transferRecipient || !transferAmount}
+                                  className="bg-purple-600 hover:bg-purple-500 text-xs h-6 px-3 disabled:bg-purple-600 disabled:opacity-50"
+                                >
+                                  Send
+                                </Button>
                               </div>
+
                             </div>
-                          )}
+                          </div>
 
                           {/* Token Management Panel - Inset */}
                           <div className="mt-4">
