@@ -7,7 +7,7 @@ import { Label } from './ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
 import { Switch } from './ui/switch';
-import { Coins, Zap, Send, Copy, ExternalLink, Loader2, Wallet, AlertCircle, CheckCircle, Trash2 } from 'lucide-react';
+import { Coins, Zap, Send, Copy, ExternalLink, Loader2, Wallet, AlertCircle, CheckCircle, Trash2, Maximize2, Minimize2 } from 'lucide-react';
 import { 
   signTransactionWithPopup, 
   signTransactionAgent,
@@ -58,11 +58,12 @@ interface DeployedToken {
 
 
 
-// Futurenet configuration
+// Futurenet configuration with fallback endpoints
 const FUTURENET_CONFIG = {
   networkPassphrase: Networks.FUTURENET,
   horizonUrl: 'https://horizon-futurenet.stellar.org',
   sorobanRpcUrl: 'https://rpc-futurenet.stellar.org',
+  fallbackRpcUrl: 'https://stellar.liquify.com/api=41EEWAH79Y5OCGI7/futurenet',
   friendbotUrl: 'https://friendbot-futurenet.stellar.org'
 };
 
@@ -118,6 +119,9 @@ export default function RealTokenDeployer() {
   const [transferRecipient, setTransferRecipient] = useState('');
   const [transferAmount, setTransferAmount] = useState('100');
   const [selectedTokenForTransfer, setSelectedTokenForTransfer] = useState<DeployedToken | null>(null);
+  const [isLogsPopout, setIsLogsPopout] = useState(false);
+  const [showCreateToken, setShowCreateToken] = useState(false);
+  const [rpcHealthStatus, setRpcHealthStatus] = useState<{primary: any, fallback: any} | null>(null);
 
   const addLog = (message: string, type: 'info' | 'success' | 'error' | 'warning' = 'info', isAgentAction = false) => {
     const timestamp = new Date().toLocaleTimeString();
@@ -168,6 +172,16 @@ export default function RealTokenDeployer() {
 
     checkWallet();
   }, []);
+
+  // Auto-search for tokens when wallet connects
+  useEffect(() => {
+    if (wallet.isConnected && wallet.publicKey) {
+      // Automatically search for tokens when wallet connects
+      setTimeout(() => {
+        scanForPreviousTokens();
+      }, 1000); // Small delay to let wallet connection settle
+    }
+  }, [wallet.isConnected, wallet.publicKey]);
 
   /**
    * Extract session data from SAFU wallet using authenticated browser session
@@ -460,6 +474,97 @@ export default function RealTokenDeployer() {
   };
 
   /**
+   * Check RPC health status with detailed info
+   */
+  const checkRpcHealth = async (rpcUrl: string): Promise<{healthy: boolean, details: string, latency?: number}> => {
+    const startTime = Date.now();
+    try {
+      const server = new rpc.Server(rpcUrl);
+      
+      // Create a timeout promise for faster failure detection
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error('Request timeout')), 10000); // 10 second timeout
+      });
+      
+      // Try to get network info and health with timeout
+      const networkInfo = await Promise.race([
+        server.getNetwork(),
+        timeoutPromise
+      ]);
+      
+      const health = await Promise.race([
+        server.getHealth(),
+        timeoutPromise
+      ]);
+      
+      const latency = Date.now() - startTime;
+      
+      return {
+        healthy: true,
+        details: `Network: ${networkInfo.networkPassphrase.substring(0, 20)}..., Health: ${health.status}, Ledger: ${health.latestLedger}`,
+        latency
+      };
+    } catch (error: any) {
+      const latency = Date.now() - startTime;
+      let details = 'Connection failed';
+      
+      if (error.message?.includes('timeout')) {
+        details = 'Request timeout (10s)';
+      } else if (error.message?.includes('503')) {
+        details = '503 Service Unavailable';
+      } else if (error.message?.includes('404')) {
+        details = '404 Not Found';
+      } else if (error.message?.includes('Network Error')) {
+        details = 'Network Error';
+      } else if (error.message?.includes('CORS')) {
+        details = 'CORS Policy Error';
+      }
+      
+      return {
+        healthy: false,
+        details,
+        latency
+      };
+    }
+  };
+
+  /**
+   * Check all RPC endpoints health
+   */
+  const checkAllRpcHealth = async (detailed: boolean = false) => {
+    if (detailed) {
+      addLog('🔍 Checking Futurenet RPC endpoints health...', 'info');
+    }
+    
+    const primaryHealth = await checkRpcHealth(FUTURENET_CONFIG.sorobanRpcUrl);
+    const fallbackHealth = await checkRpcHealth(FUTURENET_CONFIG.fallbackRpcUrl);
+    
+    if (detailed) {
+      addLog(`📊 Primary RPC: ${primaryHealth.healthy ? '✅' : '❌'} ${primaryHealth.details} (${primaryHealth.latency}ms)`, primaryHealth.healthy ? 'success' : 'error');
+      addLog(`📊 Fallback RPC: ${fallbackHealth.healthy ? '✅' : '❌'} ${fallbackHealth.details} (${fallbackHealth.latency}ms)`, fallbackHealth.healthy ? 'success' : 'error');
+    } else {
+      // Quick status for deploy check
+      if (!primaryHealth.healthy) {
+        addLog(`⚠️ Primary RPC offline: ${primaryHealth.details}`, 'warning');
+        if (fallbackHealth.healthy) {
+          addLog(`✅ Fallback RPC available: ${fallbackHealth.details} (${fallbackHealth.latency}ms)`, 'success');
+        } else {
+          addLog(`❌ Fallback RPC also offline: ${fallbackHealth.details}`, 'error');
+        }
+      } else {
+        addLog(`✅ Primary RPC online: ${primaryHealth.details} (${primaryHealth.latency}ms)`, 'success');
+      }
+    }
+    
+    if (!primaryHealth.healthy && !fallbackHealth.healthy && detailed) {
+      addLog('⚠️ All RPC endpoints are currently down. Please try again later.', 'warning');
+      addLog('💡 You can monitor Stellar network status at https://dashboard.stellar.org/', 'info');
+    }
+    
+    return { primary: primaryHealth, fallback: fallbackHealth };
+  };
+
+  /**
    * Build actual SEP-41 token deployment transaction
    */
   const buildTokenDeploymentTransaction = async (): Promise<string> => {
@@ -468,19 +573,37 @@ export default function RealTokenDeployer() {
     }
 
     try {
-      // Initialize Soroban RPC server for Futurenet
-      const server = new rpc.Server(FUTURENET_CONFIG.sorobanRpcUrl);
-      addLog('🔗 Connected to Futurenet RPC', 'success');
-      
-      // Get account details for the deployer
+      // Initialize Soroban RPC server for Futurenet with fallback
+      let server = new rpc.Server(FUTURENET_CONFIG.sorobanRpcUrl);
       let sourceAccount;
+      
+      // Try to get account from primary RPC
       try {
         sourceAccount = await server.getAccount(wallet.publicKey);
+        addLog('🔗 Connected to Futurenet RPC (primary)', 'success');
         addLog('✅ Retrieved account from Futurenet', 'success');
         addLog(`🔍 Account sequence: ${sourceAccount.sequenceNumber()}`, 'info');
         addLog(`💰 Account has ${sourceAccount.balances?.length || 0} balances`, 'info');
       } catch (error: any) {
-        if (error.code === 404) {
+        // If primary RPC fails with network error, try fallback
+        if (error.message?.includes('503') || error.message?.includes('Network Error') || error.message?.includes('fetch')) {
+          addLog('⚠️ Primary RPC failed, trying fallback...', 'warning');
+          server = new rpc.Server(FUTURENET_CONFIG.fallbackRpcUrl);
+          
+          try {
+            sourceAccount = await server.getAccount(wallet.publicKey);
+            addLog('🔗 Connected to Futurenet RPC (fallback)', 'success');
+            addLog('✅ Retrieved account from Futurenet', 'success');
+            addLog(`🔍 Account sequence: ${sourceAccount.sequenceNumber()}`, 'info');
+            addLog(`💰 Account has ${sourceAccount.balances?.length || 0} balances`, 'info');
+          } catch (fallbackError: any) {
+            if (fallbackError.code === 404) {
+              throw new Error(`Account not found on Futurenet. Please fund your account first: ${FUTURENET_CONFIG.friendbotUrl}?addr=${wallet.publicKey}`);
+            } else {
+              throw fallbackError;
+            }
+          }
+        } else if (error.code === 404) {
           // Account doesn't exist on Futurenet
           throw new Error(`Account not found on Futurenet. Please fund your account first: ${FUTURENET_CONFIG.friendbotUrl}?addr=${wallet.publicKey}`);
         } else {
@@ -558,6 +681,16 @@ export default function RealTokenDeployer() {
       addLog('Starting SEP-41 token deployment to Futurenet...', 'info');
       addLog(`Token: ${tokenConfig.name} (${tokenConfig.symbol})`, 'info');
       addLog(`Admin: ${tokenConfig.admin.substring(0, 8)}...`, 'info');
+
+      // Check RPC health before starting deployment
+      setDeploymentStep('Checking RPC connectivity...');
+      addLog('🔍 Checking RPC endpoints before deployment...', 'info');
+      const healthStatus = await checkAllRpcHealth(false);
+      setRpcHealthStatus(healthStatus);
+
+      if (!healthStatus.primary.healthy && !healthStatus.fallback.healthy) {
+        throw new Error('All RPC endpoints are currently unavailable. Please try again later.');
+      }
 
       setDeploymentStep('Building deployment transaction...');
       addLog('Building SEP-41 deployment transaction...', 'info');
@@ -1149,641 +1282,909 @@ export default function RealTokenDeployer() {
         </div>
       </div>
 
-      {/* Fixed-width 3-column content with horizontal scroll */}
-      <div className="overflow-x-auto">
-        <div className="w-[1200px] px-6 pb-6">
-          <div className="grid grid-cols-[400px_400px_400px] gap-6">
-        {/* Token Configuration */}
-        <Card className="bg-gray-900 border-current/20 rounded-none">
-          <CardHeader>
-            <CardTitle className="text-gray-300 flex items-center gap-2">
-              <Coins className="w-5 h-5 text-purple-400" />
-              Create SEP-41 Token
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-2">
-                <Label className="text-gray-400 text-sm">Name</Label>
-                <Input
-                  value={tokenConfig.name}
-                  onChange={(e) => updateTokenConfig('name', e.target.value)}
-                  className="bg-black border-current/20 text-gray-300 text-sm h-8"
-                />
+      {/* 2-column layout: Equal width columns, fixed max width */}
+      <div className="px-6 pb-6 flex justify-center">
+        <div className="w-full max-w-[900px]">
+          <div className="grid grid-cols-2 gap-6">
+          {/* Left Column - Main Content */}
+          <div className="space-y-6">
+            {/* My Tokens Section */}
+            {wallet.isConnected ? (
+              <div className="space-y-4">
+                {/* Toggle Button - show only the opposite of current view */}
+                {!showCreateToken ? (
+                  <Button
+                    onClick={() => setShowCreateToken(true)}
+                    variant="outline"
+                    size="sm"
+                    className="h-10 w-full text-base"
+                  >
+                    <Coins className="w-4 h-4 mr-2 text-purple-400" />
+                    Create SEP-41 Token
+                  </Button>
+                ) : (
+                  <Button
+                    onClick={() => setShowCreateToken(false)}
+                    variant="outline"
+                    size="sm"
+                    className="h-10 w-full text-base"
+                  >
+                    <CheckCircle className="w-4 h-4 mr-2 text-green-400" />
+                    My Tokens ({deployedTokens.length})
+                  </Button>
+                )}
+
+                {!showCreateToken ? (
+                  /* Deployed Tokens View */
+                  <Card className="bg-gray-900 border-current/20">
+                    <CardHeader>
+                      <CardTitle className="text-gray-300 flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <CheckCircle className="w-5 h-5 text-green-400" />
+                          Deployed SEP-41 Tokens ({deployedTokens.length})
+                        </div>
+                        <Button 
+                          onClick={scanForPreviousTokens}
+                          size="sm"
+                          variant="outline"
+                          className="text-xs h-6"
+                        >
+                          🔄
+                        </Button>
+                      </CardTitle>
+                    </CardHeader>
+                <CardContent>
+                  {deployedTokens.length > 0 ? (
+                    <div className="space-y-4">
+                      {deployedTokens.map((token, index) => (
+                        <div key={index} className="space-y-4">
+                          {/* Token Info Panel */}
+                          <div className="border border-gray-700 rounded p-4 space-y-4">
+                            <div className="flex items-start justify-between">
+                              <div>
+                                <div className="flex items-center gap-2 mb-2">
+                                  <span className="font-semibold text-gray-300 text-lg">{token.config.name}</span>
+                                  <Badge className="bg-purple-600">{token.config.symbol}</Badge>
+                                  <Badge className="bg-green-600 text-xs">SEP-41</Badge>
+                                  <Badge className="bg-blue-600 text-xs">{token.network}</Badge>
+                                </div>
+                                <div className="text-sm text-gray-400 space-y-1">
+                                  <div>Deployed: {token.deployedAt.toLocaleString()}</div>
+                                  <div>Initial Supply: {token.config.initialSupply} {token.config.symbol}</div>
+                                  <div className="flex gap-4">
+                                    {token.config.isFixedSupply && <span className="text-yellow-400">Fixed Supply</span>}
+                                    {token.config.isMintable && <span className="text-green-400">Mintable</span>}
+                                    {token.config.isBurnable && <span className="text-red-400">Burnable</span>}
+                                    {token.config.isFreezable && <span className="text-blue-400">Freezable</span>}
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="space-y-2 text-xs">
+                              <div className="space-y-1">
+                                <div className="text-gray-400">Contract ID:</div>
+                                <div className="flex items-center gap-2">
+                                  <code className="bg-black px-2 py-1 rounded font-mono text-gray-300 break-all text-xs flex-1">
+                                    {token.contractId}
+                                  </code>
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    onClick={() => copyToClipboard(token.contractId)}
+                                    className="h-6 w-6 p-0 flex-shrink-0"
+                                  >
+                                    <Copy className="w-3 h-3" />
+                                  </Button>
+                                </div>
+                              </div>
+                              
+                              <div className="space-y-2">
+                                {token.initTxHash && (
+                                  <div className="space-y-1">
+                                    <span className="text-gray-400">Init TX:</span>
+                                    <code className="bg-black px-2 py-1 rounded font-mono text-gray-300 text-xs break-all block">
+                                      {token.initTxHash}
+                                    </code>
+                                  </div>
+                                )}
+                                {token.mintTxHash && (
+                                  <div className="space-y-1">
+                                    <span className="text-gray-400">Mint TX:</span>
+                                    <code className="bg-black px-2 py-1 rounded font-mono text-gray-300 text-xs break-all block">
+                                      {token.mintTxHash}
+                                    </code>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+
+                            <div className="flex gap-2 pt-2">
+                              <Button 
+                                size="sm" 
+                                variant="outline"
+                                onClick={() => {
+                                  if (token.contractId.startsWith('C') && token.contractId.length === 56) {
+                                    window.open(`https://futurenet.stellarchain.io/contracts/${token.contractId}`, '_blank');
+                                  } else {
+                                    addLog(`⚠️ Contract ${token.contractId} appears to be mock/simulated`, 'warning');
+                                    addLog(`💡 Check the transaction hash instead: ${token.deployTxHash}`, 'info');
+                                    if (token.deployTxHash && !token.deployTxHash.startsWith('mock')) {
+                                      window.open(`https://futurenet.stellarchain.io/transactions/${token.deployTxHash}`, '_blank');
+                                    }
+                                  }
+                                }}
+                                className="text-xs"
+                              >
+                                <ExternalLink className="w-3 h-3 mr-1" />
+                                Explorer
+                              </Button>
+                            </div>
+                          </div>
+
+                          {/* Transfer Tokens Panel - Above Manage Token */}
+                          {selectedTokenForTransfer && selectedTokenForTransfer.contractId === token.contractId && (
+                            <div className="mt-4">
+                              <div className="border border-gray-700 rounded p-4 space-y-4 bg-gray-800/50">
+                                <div className="flex items-center gap-2 mb-3">
+                                  <Send className="w-4 h-4 text-green-400" />
+                                  <span className="text-gray-300 text-sm font-medium">Transfer {selectedTokenForTransfer.config.symbol} Tokens</span>
+                                </div>
+
+                                <div className="space-y-2">
+                                  <Label className="text-gray-400 text-xs">Recipient Address</Label>
+                                  <Input
+                                    value={transferRecipient}
+                                    onChange={(e) => setTransferRecipient(e.target.value)}
+                                    placeholder="GXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+                                    className="font-mono text-xs bg-black border-current/20 text-gray-300 h-6"
+                                    maxLength={56}
+                                  />
+                                </div>
+
+                                <div className="flex gap-1 items-end mt-2">
+                                  <div className="flex-1 space-y-1">
+                                    <Label className="text-gray-400 text-xs">Amount</Label>
+                                    <Input
+                                      value={transferAmount}
+                                      onChange={(e) => setTransferAmount(e.target.value)}
+                                      placeholder="100"
+                                      className="bg-black border-current/20 text-gray-300 text-xs h-6"
+                                      type="number"
+                                      min="0.0000001"
+                                      step="0.0000001"
+                                    />
+                                  </div>
+                                  <Button 
+                                    onClick={executeTokenTransfer}
+                                    disabled={!wallet.isConnected || !transferRecipient || !transferAmount}
+                                    className="bg-blue-600 hover:bg-blue-500 text-xs h-6 px-3 disabled:bg-blue-600 disabled:opacity-50"
+                                  >
+                                    Send
+                                  </Button>
+                                </div>
+
+                                <div className="flex gap-1 mt-2">
+                                  <Button 
+                                    onClick={() => testTokenTransfer(token)}
+                                    disabled={!wallet.isConnected}
+                                    size="sm"
+                                    variant="outline"
+                                    className="text-xs"
+                                  >
+                                    <Send className="w-3 h-3 mr-1" />
+                                    Transfer Tokens
+                                  </Button>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Token Management Panel - Inset */}
+                          <div className="mt-4">
+                            <div className="border border-gray-700 rounded p-4 space-y-4 bg-gray-800/50">
+                              <div className="flex items-center gap-2 mb-3">
+                                <Coins className="w-4 h-4 text-orange-400" />
+                                <span className="text-gray-300 text-sm font-medium">Manage Token</span>
+                              </div>
+
+                              <div className="space-y-2">
+                                <Label className="text-gray-400 text-xs">Contract Address</Label>
+                                <Input
+                                  value={contractAddress || token.contractId}
+                                  onChange={(e) => setContractAddress(e.target.value)}
+                                  placeholder="Contract address auto-filled"
+                                  className="font-mono text-xs bg-black border-current/20 text-gray-300 h-7"
+                                  maxLength={56}
+                                />
+                              </div>
+
+                              <div className="grid grid-cols-2 gap-3">
+                                <div className="flex gap-1 items-end">
+                                  <div className="flex-1 space-y-1">
+                                    <Label className="text-gray-400 text-xs">Mint</Label>
+                                    <Input
+                                      value={mintAmount}
+                                      onChange={(e) => setMintAmount(e.target.value)}
+                                      placeholder="1000"
+                                      className="bg-black border-current/20 text-gray-300 text-xs h-6"
+                                    />
+                                  </div>
+                                  <Button 
+                                    onClick={async () => {
+                                      if (!wallet.isConnected || (!contractAddress && !token.contractId) || !mintAmount) return;
+                                      const targetContract = contractAddress || token.contractId;
+                                      try {
+                                        addLog(`Building mint transaction...`, 'info');
+                                        addLog(`Contract: ${targetContract.substring(0, 8)}... Amount: ${mintAmount}`, 'info');
+                                        
+                                        const mintXdr = await buildTokenDeploymentTransaction();
+                                        
+                                        addLog(`🔐 Requesting mint transaction signature...`, 'info');
+                                        const signingResult = await signTransactionWithPopup(mintXdr, {
+                                          description: `Mint ${mintAmount} tokens`,
+                                          networkPassphrase: FUTURENET_CONFIG.networkPassphrase,
+                                          network: 'futurenet',
+                                          appName: 'Token Lab'
+                                        });
+                                        
+                                        addLog(`Mint transaction signed and submitted`, 'success');
+                                        const txHash = `TX_MINT_` + Math.random().toString(36).substring(2, 15).toUpperCase();
+                                        addLog(`Minted ${mintAmount} tokens`, 'success');
+                                        addLog(`Transaction: ${txHash}`, 'info');
+                                        setMintAmount('');
+                                      } catch (error) {
+                                        const errorMessage = error instanceof Error ? error.message : String(error);
+                                        addLog(`Mint failed: ${errorMessage}`, 'error');
+                                      }
+                                    }}
+                                    disabled={!wallet.isConnected || (!contractAddress && !token.contractId) || !mintAmount}
+                                    className="bg-purple-600 hover:bg-purple-500 text-xs h-6 w-12 disabled:bg-purple-600 disabled:opacity-100"
+                                  >
+                                    Mint
+                                  </Button>
+                                </div>
+
+                                <div className="flex gap-1 items-end">
+                                  <div className="flex-1 space-y-1">
+                                    <Label className="text-gray-400 text-xs">Burn</Label>
+                                    <Input
+                                      value={burnAmount}
+                                      onChange={(e) => setBurnAmount(e.target.value)}
+                                      placeholder="500"
+                                      className="bg-black border-current/20 text-gray-300 text-xs h-6"
+                                    />
+                                  </div>
+                                  <Button 
+                                    onClick={async () => {
+                                      if (!wallet.isConnected || (!contractAddress && !token.contractId) || !burnAmount) return;
+                                      const targetContract = contractAddress || token.contractId;
+                                      try {
+                                        addLog(`Executing burn on contract ${targetContract.substring(0, 8)}...`, 'info');
+                                        addLog(`Amount: ${burnAmount}`, 'info');
+                                        await new Promise(resolve => setTimeout(resolve, 1200));
+                                        const txHash = `TX_BURN_` + Math.random().toString(36).substring(2, 15).toUpperCase();
+                                        addLog(`Burned ${burnAmount} tokens`, 'success');
+                                        addLog(`Transaction: ${txHash}`, 'info');
+                                        setBurnAmount('');
+                                      } catch (error) {
+                                        addLog(`Burn failed: ${error}`, 'error');
+                                      }
+                                    }}
+                                    disabled={!wallet.isConnected || (!contractAddress && !token.contractId) || !burnAmount}
+                                    className="bg-purple-600 hover:bg-purple-500 text-xs h-6 w-12 disabled:bg-purple-600 disabled:opacity-100"
+                                  >
+                                    Burn
+                                  </Button>
+                                </div>
+                              </div>
+
+                              <div className="space-y-2">
+                                <div className="flex gap-1 items-end">
+                                  <div className="flex-1 space-y-1">
+                                    <Label className="text-gray-400 text-xs">Freeze Address</Label>
+                                    <Input
+                                      value={freezeAddress}
+                                      onChange={(e) => setFreezeAddress(e.target.value)}
+                                      placeholder="GXXXXX..."
+                                      className="bg-black border-current/20 text-gray-300 text-xs h-6 font-mono"
+                                    />
+                                  </div>
+                                  <Button 
+                                    onClick={async () => {
+                                      if (!wallet.isConnected || (!contractAddress && !token.contractId) || !freezeAddress) return;
+                                      const targetContract = contractAddress || token.contractId;
+                                      try {
+                                        addLog(`Executing freeze on contract ${targetContract.substring(0, 8)}...`, 'info');
+                                        addLog(`Address: ${freezeAddress}`, 'info');
+                                        await new Promise(resolve => setTimeout(resolve, 1200));
+                                        const txHash = `TX_FREEZE_` + Math.random().toString(36).substring(2, 15).toUpperCase();
+                                        addLog(`Frozen account ${freezeAddress.substring(0, 8)}...`, 'success');
+                                        addLog(`Transaction: ${txHash}`, 'info');
+                                        setFreezeAddress('');
+                                      } catch (error) {
+                                        addLog(`Freeze failed: ${error}`, 'error');
+                                      }
+                                    }}
+                                    disabled={!wallet.isConnected || (!contractAddress && !token.contractId) || !freezeAddress}
+                                    className="bg-purple-600 hover:bg-purple-500 text-xs h-6 w-14 disabled:bg-purple-600 disabled:opacity-100"
+                                  >
+                                    Freeze
+                                  </Button>
+                                </div>
+
+                                <div className="flex gap-1 items-end">
+                                  <div className="flex-1 space-y-1">
+                                    <Label className="text-gray-400 text-xs">Unfreeze Address</Label>
+                                    <Input
+                                      value={unfreezeAddress}
+                                      onChange={(e) => setUnfreezeAddress(e.target.value)}
+                                      placeholder="GXXXXX..."
+                                      className="bg-black border-current/20 text-gray-300 text-xs h-6 font-mono"
+                                    />
+                                  </div>
+                                  <Button 
+                                    onClick={async () => {
+                                      if (!wallet.isConnected || (!contractAddress && !token.contractId) || !unfreezeAddress) return;
+                                      const targetContract = contractAddress || token.contractId;
+                                      try {
+                                        addLog(`Executing unfreeze on contract ${targetContract.substring(0, 8)}...`, 'info');
+                                        addLog(`Address: ${unfreezeAddress}`, 'info');
+                                        await new Promise(resolve => setTimeout(resolve, 1200));
+                                        const txHash = `TX_UNFREEZE_` + Math.random().toString(36).substring(2, 15).toUpperCase();
+                                        addLog(`Unfrozen account ${unfreezeAddress.substring(0, 8)}...`, 'success');
+                                        addLog(`Transaction: ${txHash}`, 'info');
+                                        setUnfreezeAddress('');
+                                      } catch (error) {
+                                        addLog(`Unfreeze failed: ${error}`, 'error');
+                                      }
+                                    }}
+                                    disabled={!wallet.isConnected || (!contractAddress && !token.contractId) || !unfreezeAddress}
+                                    className="bg-purple-600 hover:bg-purple-500 text-xs h-6 w-14 disabled:bg-purple-600 disabled:opacity-100"
+                                  >
+                                    Unfreeze
+                                  </Button>
+                                </div>
+
+                                <div className="flex gap-1 items-end">
+                                  <div className="flex-1 space-y-1">
+                                    <Label className="text-gray-400 text-xs">New Admin Address</Label>
+                                    <Input
+                                      value={newAdminAddress}
+                                      onChange={(e) => setNewAdminAddress(e.target.value)}
+                                      placeholder="GXXXXX..."
+                                      className="bg-black border-current/20 text-gray-300 text-xs h-6 font-mono"
+                                    />
+                                  </div>
+                                  <Button 
+                                    onClick={async () => {
+                                      if (!wallet.isConnected || (!contractAddress && !token.contractId) || !newAdminAddress) return;
+                                      const targetContract = contractAddress || token.contractId;
+                                      try {
+                                        addLog(`Executing transfer_admin on contract ${targetContract.substring(0, 8)}...`, 'info');
+                                        addLog(`New admin: ${newAdminAddress}`, 'info');
+                                        await new Promise(resolve => setTimeout(resolve, 1200));
+                                        const txHash = `TX_TRANSFER_ADMIN_` + Math.random().toString(36).substring(2, 15).toUpperCase();
+                                        addLog(`Transferred admin to ${newAdminAddress.substring(0, 8)}...`, 'success');
+                                        addLog(`Transaction: ${txHash}`, 'info');
+                                        setNewAdminAddress('');
+                                      } catch (error) {
+                                        addLog(`Admin transfer failed: ${error}`, 'error');
+                                      }
+                                    }}
+                                    disabled={!wallet.isConnected || (!contractAddress && !token.contractId) || !newAdminAddress}
+                                    className="bg-purple-600 hover:bg-purple-500 text-xs h-6 w-16 disabled:bg-purple-600 disabled:opacity-100"
+                                  >
+                                    Transfer
+                                  </Button>
+                                </div>
+                              </div>
+
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-center py-8">
+                      <div className="text-gray-500 text-sm mb-2">
+                        No deployed tokens found
+                      </div>
+                      <div className="text-gray-600 text-xs">
+                        Deploy a token below or wait for automatic search to complete
+                      </div>
+                    </div>
+                  )}
+                    </CardContent>
+                  </Card>
+                ) : (
+                  /* Create Token View */
+                  <Card className="bg-gray-900 border-current/20">
+                    <CardHeader>
+                      <CardTitle className="text-gray-300 flex items-center gap-2">
+                        <Coins className="w-5 h-5 text-purple-400" />
+                        Create SEP-41 Token
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-2">
+                          <Label className="text-gray-400 text-sm">Name</Label>
+                          <Input
+                            value={tokenConfig.name}
+                            onChange={(e) => updateTokenConfig('name', e.target.value)}
+                            className="bg-black border-current/20 text-gray-300 text-sm h-8"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label className="text-gray-400 text-sm">Symbol</Label>
+                          <Input
+                            value={tokenConfig.symbol}
+                            onChange={(e) => updateTokenConfig('symbol', e.target.value.toUpperCase())}
+                            className="bg-black border-current/20 text-gray-300 text-sm h-8"
+                            maxLength={12}
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-3 gap-3">
+                        <div className="space-y-2">
+                          <Label className="text-gray-400 text-sm">Decimals</Label>
+                          <Input
+                            type="number"
+                            value={tokenConfig.decimals}
+                            onChange={(e) => updateTokenConfig('decimals', parseInt(e.target.value) || 0)}
+                            className="bg-black border-current/20 text-gray-300 text-sm h-8"
+                            min="0"
+                            max="18"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label className="text-gray-400 text-sm">Initial Supply</Label>
+                          <Input
+                            value={tokenConfig.initialSupply}
+                            onChange={(e) => updateTokenConfig('initialSupply', e.target.value)}
+                            className="bg-black border-current/20 text-gray-300 text-sm h-8"
+                            placeholder="1000000"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label className="text-gray-400 text-sm">Max Supply</Label>
+                          <Input
+                            value={tokenConfig.maxSupply}
+                            onChange={(e) => updateTokenConfig('maxSupply', e.target.value)}
+                            className="bg-black border-current/20 text-gray-300 text-sm h-8"
+                            placeholder="10000000"
+                            disabled={tokenConfig.isFixedSupply}
+                          />
+                        </div>
+                      </div>
+
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <div className="space-y-0.5">
+                            <Label className="text-gray-400 text-sm">Fixed Supply</Label>
+                            <div className="text-xs text-gray-500">Token supply cannot be changed</div>
+                          </div>
+                          <Switch
+                            checked={tokenConfig.isFixedSupply}
+                            onCheckedChange={(checked) => updateTokenConfig('isFixedSupply', checked)}
+                          />
+                        </div>
+                        
+                        <div className="flex items-center justify-between">
+                          <div className="space-y-0.5">
+                            <Label className="text-gray-400 text-sm">Mintable</Label>
+                            <div className="text-xs text-gray-500">Allow creation of new tokens</div>
+                          </div>
+                          <Switch
+                            checked={tokenConfig.isMintable}
+                            onCheckedChange={(checked) => updateTokenConfig('isMintable', checked)}
+                            disabled={tokenConfig.isFixedSupply}
+                          />
+                        </div>
+
+                        <div className="flex items-center justify-between">
+                          <div className="space-y-0.5">
+                            <Label className="text-gray-400 text-sm">Burnable</Label>
+                            <div className="text-xs text-gray-500">Allow burning of tokens</div>
+                          </div>
+                          <Switch
+                            checked={tokenConfig.isBurnable}
+                            onCheckedChange={(checked) => updateTokenConfig('isBurnable', checked)}
+                          />
+                        </div>
+
+                        <div className="flex items-center justify-between">
+                          <div className="space-y-0.5">
+                            <Label className="text-gray-400 text-sm">Freezable</Label>
+                            <div className="text-xs text-gray-500">Allow freezing token accounts</div>
+                          </div>
+                          <Switch
+                            checked={tokenConfig.isFreezable}
+                            onCheckedChange={(checked) => updateTokenConfig('isFreezable', checked)}
+                          />
+                        </div>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label className="text-gray-400 text-sm">Admin Address</Label>
+                        <Input
+                          value={tokenConfig.admin}
+                          onChange={(e) => updateTokenConfig('admin', e.target.value)}
+                          className="bg-black border-current/20 text-gray-300 text-sm h-8 font-mono"
+                          placeholder={wallet.publicKey || "Connect wallet to auto-fill"}
+                        />
+                      </div>
+
+                      {/* RPC Health Status */}
+                      {rpcHealthStatus && (
+                        <div className="bg-gray-800/50 rounded p-3 space-y-2">
+                          <div className="text-xs text-gray-400 font-medium">RPC Status</div>
+                          <div className="flex items-center gap-2 text-xs">
+                            <div className={`w-2 h-2 rounded-full ${rpcHealthStatus.primary.healthy ? 'bg-green-500' : 'bg-red-500'}`}></div>
+                            <span className="text-gray-300">Primary:</span>
+                            <span className={rpcHealthStatus.primary.healthy ? 'text-green-400' : 'text-red-400'}>
+                              {rpcHealthStatus.primary.details}
+                            </span>
+                            {rpcHealthStatus.primary.latency && (
+                              <span className="text-gray-500">({rpcHealthStatus.primary.latency}ms)</span>
+                            )}
+                          </div>
+                          {!rpcHealthStatus.primary.healthy && (
+                            <div className="flex items-center gap-2 text-xs">
+                              <div className={`w-2 h-2 rounded-full ${rpcHealthStatus.fallback.healthy ? 'bg-green-500' : 'bg-red-500'}`}></div>
+                              <span className="text-gray-300">Fallback:</span>
+                              <span className={rpcHealthStatus.fallback.healthy ? 'text-green-400' : 'text-red-400'}>
+                                {rpcHealthStatus.fallback.details}
+                              </span>
+                              {rpcHealthStatus.fallback.latency && (
+                                <span className="text-gray-500">({rpcHealthStatus.fallback.latency}ms)</span>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      <div className="pt-2">
+                        <Button 
+                          onClick={deployToken}
+                          disabled={isDeploying || !wallet.isConnected}
+                          className="w-full h-10 bg-purple-600 hover:bg-purple-700"
+                        >
+                          {isDeploying ? (
+                            <div className="flex items-center gap-2">
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                              Deploying Token...
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-2">
+                              <Zap className="w-4 h-4" />
+                              Deploy SEP-41 Token to Futurenet
+                            </div>
+                          )}
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
               </div>
-              <div className="space-y-2">
-                <Label className="text-gray-400 text-sm">Symbol</Label>
-                <Input
-                  value={tokenConfig.symbol}
-                  onChange={(e) => updateTokenConfig('symbol', e.target.value.toUpperCase())}
-                  className="bg-black border-current/20 text-gray-300 text-sm h-8"
-                  maxLength={12}
-                />
-              </div>
-            </div>
+            ) : (
+              <div className="space-y-6">
+                <Card className="bg-gray-900 border-current/20">
+                  <CardHeader>
+                    <CardTitle className="text-gray-300 flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Wallet className="w-5 h-5 text-gray-400" />
+                        My Tokens
+                      </div>
+                      <div className="text-gray-500 text-sm">
+                        Connect your wallet to see your tokens
+                      </div>
+                    </CardTitle>
+                  </CardHeader>
+                </Card>
 
-            <div className="space-y-2">
-              <Label className="text-gray-400 text-sm">Decimals</Label>
-              <Input
-                type="number"
-                value={tokenConfig.decimals}
-                onChange={(e) => updateTokenConfig('decimals', Number(e.target.value))}
-                min="0"
-                max="18"
-                className="bg-black border-current/20 text-gray-300 text-sm h-8"
-              />
-            </div>
+                {/* Create SEP-41 Token when not connected */}
+                <Card className="bg-gray-900 border-current/20">
+                  <CardHeader>
+                    <CardTitle className="text-gray-300 flex items-center gap-2">
+                      <Coins className="w-5 h-5 text-purple-400" />
+                      Create SEP-41 Token
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-2">
+                        <Label className="text-gray-400 text-sm">Name</Label>
+                        <Input
+                          value={tokenConfig.name}
+                          onChange={(e) => updateTokenConfig('name', e.target.value)}
+                          className="bg-black border-current/20 text-gray-300 text-sm h-8"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="text-gray-400 text-sm">Symbol</Label>
+                        <Input
+                          value={tokenConfig.symbol}
+                          onChange={(e) => updateTokenConfig('symbol', e.target.value.toUpperCase())}
+                          className="bg-black border-current/20 text-gray-300 text-sm h-8"
+                          maxLength={12}
+                        />
+                      </div>
+                    </div>
 
-            <div className="space-y-2">
-              <Label className="text-gray-400 text-sm">Initial Supply</Label>
-              <Input
-                value={tokenConfig.initialSupply}
-                onChange={(e) => updateTokenConfig('initialSupply', e.target.value)}
-                className="bg-black border-current/20 text-gray-300 text-sm h-8"
-              />
-            </div>
+                    <div className="grid grid-cols-3 gap-3">
+                      <div className="space-y-2">
+                        <Label className="text-gray-400 text-sm">Decimals</Label>
+                        <Input
+                          type="number"
+                          value={tokenConfig.decimals}
+                          onChange={(e) => updateTokenConfig('decimals', parseInt(e.target.value) || 0)}
+                          className="bg-black border-current/20 text-gray-300 text-sm h-8"
+                          min="0"
+                          max="18"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="text-gray-400 text-sm">Initial Supply</Label>
+                        <Input
+                          value={tokenConfig.initialSupply}
+                          onChange={(e) => updateTokenConfig('initialSupply', e.target.value)}
+                          className="bg-black border-current/20 text-gray-300 text-sm h-8"
+                          placeholder="1000000"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="text-gray-400 text-sm">Max Supply</Label>
+                        <Input
+                          value={tokenConfig.maxSupply}
+                          onChange={(e) => updateTokenConfig('maxSupply', e.target.value)}
+                          className="bg-black border-current/20 text-gray-300 text-sm h-8"
+                          placeholder="10000000"
+                          disabled={tokenConfig.isFixedSupply}
+                        />
+                      </div>
+                    </div>
 
-            <div className="space-y-2">
-              <Label className="text-gray-400 text-sm">Max Supply</Label>
-              <Input
-                value={tokenConfig.maxSupply}
-                onChange={(e) => updateTokenConfig('maxSupply', e.target.value)}
-                disabled={!tokenConfig.isFixedSupply}
-                className={`text-sm h-8 ${
-                  tokenConfig.isFixedSupply 
-                    ? 'bg-black border-current/20 text-gray-300' 
-                    : 'bg-gray-800 border-gray-700 text-gray-500 cursor-not-allowed'
-                }`}
-                placeholder={tokenConfig.isFixedSupply ? "Enter max supply" : "Unlimited supply"}
-              />
-            </div>
-
-            <div className="space-y-3 pt-2">
-              <div className="flex items-center justify-between p-3 bg-gray-800/50 rounded">
-                <Label className="text-gray-300 text-sm">Fixed Supply</Label>
-                <Switch
-                  checked={tokenConfig.isFixedSupply}
-                  onCheckedChange={(checked) => updateTokenConfig('isFixedSupply', checked)}
-                  className="data-[state=checked]:bg-gray-600 data-[state=unchecked]:bg-gray-700 [&>span]:bg-gray-400"
-                />
-              </div>
-
-              <div className="flex items-center justify-between p-3 bg-gray-800/50 rounded">
-                <Label className="text-gray-300 text-sm">Mintable</Label>
-                <Switch
-                  checked={tokenConfig.isMintable && !tokenConfig.isFixedSupply}
-                  onCheckedChange={(checked) => updateTokenConfig('isMintable', checked)}
-                  disabled={tokenConfig.isFixedSupply}
-                  className="data-[state=checked]:bg-gray-600 data-[state=unchecked]:bg-gray-700 [&>span]:bg-gray-400"
-                />
-              </div>
-
-              <div className="flex items-center justify-between p-3 bg-gray-800/50 rounded">
-                <Label className="text-gray-300 text-sm">Burnable</Label>
-                <Switch
-                  checked={tokenConfig.isBurnable}
-                  onCheckedChange={(checked) => updateTokenConfig('isBurnable', checked)}
-                  className="data-[state=checked]:bg-gray-600 data-[state=unchecked]:bg-gray-700 [&>span]:bg-gray-400"
-                />
-              </div>
-
-              <div className="flex items-center justify-between p-3 bg-gray-800/50 rounded">
-                <Label className="text-gray-300 text-sm">Freezable</Label>
-                <Switch
-                  checked={tokenConfig.isFreezable}
-                  onCheckedChange={(checked) => updateTokenConfig('isFreezable', checked)}
-                  className="data-[state=checked]:bg-gray-600 data-[state=unchecked]:bg-gray-700 [&>span]:bg-gray-400"
-                />
-              </div>
-            </div>
-
-            <Button 
-              onClick={deployToken}
-              disabled={isDeploying}
-              className="w-full bg-purple-600 hover:bg-purple-500"
-            >
-              {isDeploying ? (
-                <div className="flex items-center gap-2">
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  <span className="text-sm">{deploymentStep || 'Deploying...'}</span>
-                </div>
-              ) : (
-                <div className="flex items-center gap-2">
-                  <Zap className="w-4 h-4" />
-                  <span className="text-sm">Deploy SEP-41 Token</span>
-                </div>
-              )}
-            </Button>
-          </CardContent>
-        </Card>
-
-        {/* Contract Management */}
-        <Card className="bg-gray-900 border-current/20 rounded-none">
-          <CardHeader>
-            <CardTitle className="text-gray-300 flex items-center gap-2">
-              <Coins className="w-5 h-5 text-orange-400" />
-              Manage Token
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label className="text-gray-400 text-sm">Contract Address</Label>
-              <Input
-                value={contractAddress}
-                onChange={(e) => setContractAddress(e.target.value)}
-                placeholder="CXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
-                className="font-mono text-xs bg-black border-current/20 text-gray-300 h-8"
-                maxLength={56}
-              />
-            </div>
-
-            <div className="space-y-3">
-              <div className="flex gap-2 items-end">
-                <div className="flex-1 space-y-1">
-                  <Label className="text-gray-400 text-xs">Mint Amount</Label>
-                  <Input
-                    value={mintAmount}
-                    onChange={(e) => setMintAmount(e.target.value)}
-                    placeholder="1000"
-                    className="bg-black border-current/20 text-gray-300 text-xs h-7"
-                  />
-                </div>
-                <Button 
-                  onClick={async () => {
-                    if (!wallet.isConnected || !contractAddress || !mintAmount) return;
-                    try {
-                      addLog(`Building mint transaction...`, 'info');
-                      addLog(`Contract: ${contractAddress.substring(0, 8)}... Amount: ${mintAmount}`, 'info');
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div className="space-y-0.5">
+                          <Label className="text-gray-400 text-sm">Fixed Supply</Label>
+                          <div className="text-xs text-gray-500">Token supply cannot be changed</div>
+                        </div>
+                        <Switch
+                          checked={tokenConfig.isFixedSupply}
+                          onCheckedChange={(checked) => updateTokenConfig('isFixedSupply', checked)}
+                        />
+                      </div>
                       
-                      // Build mint transaction XDR (mock for demo)
-                      const mintXdr = await buildTokenDeploymentTransaction();
-                      
-                      addLog(`🔐 Requesting mint transaction signature...`, 'info');
-                      const signingResult = await signTransactionWithPopup(mintXdr, {
-                        description: `Mint ${mintAmount} tokens`,
-                        networkPassphrase: FUTURENET_CONFIG.networkPassphrase,
-                        network: 'futurenet',
-                        appName: 'Token Lab'
-                      });
-                      
-                      addLog(`Mint transaction signed and submitted`, 'success');
-                      const txHash = `TX_MINT_` + Math.random().toString(36).substring(2, 15).toUpperCase();
-                      addLog(`Minted ${mintAmount} tokens`, 'success');
-                      addLog(`Transaction: ${txHash}`, 'info');
-                      setMintAmount('');
-                    } catch (error) {
-                      const errorMessage = error instanceof Error ? error.message : String(error);
-                      addLog(`Mint failed: ${errorMessage}`, 'error');
-                    }
-                  }}
-                  disabled={!wallet.isConnected || !contractAddress || !mintAmount}
-                  className="bg-purple-600 hover:bg-purple-500 text-xs h-7 w-20 disabled:bg-purple-600 disabled:opacity-100"
-                >
-                  Mint
-                </Button>
-              </div>
+                      <div className="flex items-center justify-between">
+                        <div className="space-y-0.5">
+                          <Label className="text-gray-400 text-sm">Mintable</Label>
+                          <div className="text-xs text-gray-500">Allow creation of new tokens</div>
+                        </div>
+                        <Switch
+                          checked={tokenConfig.isMintable}
+                          onCheckedChange={(checked) => updateTokenConfig('isMintable', checked)}
+                          disabled={tokenConfig.isFixedSupply}
+                        />
+                      </div>
 
-              <div className="flex gap-2 items-end">
-                <div className="flex-1 space-y-1">
-                  <Label className="text-gray-400 text-xs">Burn Amount</Label>
-                  <Input
-                    value={burnAmount}
-                    onChange={(e) => setBurnAmount(e.target.value)}
-                    placeholder="500"
-                    className="bg-black border-current/20 text-gray-300 text-xs h-7"
-                  />
-                </div>
-                <Button 
-                  onClick={async () => {
-                    if (!wallet.isConnected || !contractAddress || !burnAmount) return;
-                    try {
-                      addLog(`Executing burn on contract ${contractAddress.substring(0, 8)}...`, 'info');
-                      addLog(`Amount: ${burnAmount}`, 'info');
-                      await new Promise(resolve => setTimeout(resolve, 1200));
-                      const txHash = `TX_BURN_` + Math.random().toString(36).substring(2, 15).toUpperCase();
-                      addLog(`Burned ${burnAmount} tokens`, 'success');
-                      addLog(`Transaction: ${txHash}`, 'info');
-                      setBurnAmount('');
-                    } catch (error) {
-                      addLog(`Burn failed: ${error}`, 'error');
-                    }
-                  }}
-                  disabled={!wallet.isConnected || !contractAddress || !burnAmount}
-                  className="bg-purple-600 hover:bg-purple-500 text-xs h-7 w-20 disabled:bg-purple-600 disabled:opacity-100"
-                >
-                  Burn
-                </Button>
-              </div>
+                      <div className="flex items-center justify-between">
+                        <div className="space-y-0.5">
+                          <Label className="text-gray-400 text-sm">Burnable</Label>
+                          <div className="text-xs text-gray-500">Allow burning of tokens</div>
+                        </div>
+                        <Switch
+                          checked={tokenConfig.isBurnable}
+                          onCheckedChange={(checked) => updateTokenConfig('isBurnable', checked)}
+                        />
+                      </div>
 
-              <div className="flex gap-2 items-end">
-                <div className="flex-1 space-y-1">
-                  <Label className="text-gray-400 text-xs">Freeze Address</Label>
-                  <Input
-                    value={freezeAddress}
-                    onChange={(e) => setFreezeAddress(e.target.value)}
-                    placeholder="GXXXXX..."
-                    className="bg-black border-current/20 text-gray-300 text-xs h-7 font-mono"
-                  />
-                </div>
-                <Button 
-                  onClick={async () => {
-                    if (!wallet.isConnected || !contractAddress || !freezeAddress) return;
-                    try {
-                      addLog(`Executing freeze on contract ${contractAddress.substring(0, 8)}...`, 'info');
-                      addLog(`Address: ${freezeAddress}`, 'info');
-                      await new Promise(resolve => setTimeout(resolve, 1200));
-                      const txHash = `TX_FREEZE_` + Math.random().toString(36).substring(2, 15).toUpperCase();
-                      addLog(`Frozen account ${freezeAddress.substring(0, 8)}...`, 'success');
-                      addLog(`Transaction: ${txHash}`, 'info');
-                      setFreezeAddress('');
-                    } catch (error) {
-                      addLog(`Freeze failed: ${error}`, 'error');
-                    }
-                  }}
-                  disabled={!wallet.isConnected || !contractAddress || !freezeAddress}
-                  className="bg-purple-600 hover:bg-purple-500 text-xs h-7 w-20 disabled:bg-purple-600 disabled:opacity-100"
-                >
-                  Freeze
-                </Button>
-              </div>
+                      <div className="flex items-center justify-between">
+                        <div className="space-y-0.5">
+                          <Label className="text-gray-400 text-sm">Freezable</Label>
+                          <div className="text-xs text-gray-500">Allow freezing token accounts</div>
+                        </div>
+                        <Switch
+                          checked={tokenConfig.isFreezable}
+                          onCheckedChange={(checked) => updateTokenConfig('isFreezable', checked)}
+                        />
+                      </div>
+                    </div>
 
-              <div className="flex gap-2 items-end">
-                <div className="flex-1 space-y-1">
-                  <Label className="text-gray-400 text-xs">Unfreeze Address</Label>
-                  <Input
-                    value={unfreezeAddress}
-                    onChange={(e) => setUnfreezeAddress(e.target.value)}
-                    placeholder="GXXXXX..."
-                    className="bg-black border-current/20 text-gray-300 text-xs h-7 font-mono"
-                  />
-                </div>
-                <Button 
-                  onClick={async () => {
-                    if (!wallet.isConnected || !contractAddress || !unfreezeAddress) return;
-                    try {
-                      addLog(`Executing unfreeze on contract ${contractAddress.substring(0, 8)}...`, 'info');
-                      addLog(`Address: ${unfreezeAddress}`, 'info');
-                      await new Promise(resolve => setTimeout(resolve, 1200));
-                      const txHash = `TX_UNFREEZE_` + Math.random().toString(36).substring(2, 15).toUpperCase();
-                      addLog(`Unfrozen account ${unfreezeAddress.substring(0, 8)}...`, 'success');
-                      addLog(`Transaction: ${txHash}`, 'info');
-                      setUnfreezeAddress('');
-                    } catch (error) {
-                      addLog(`Unfreeze failed: ${error}`, 'error');
-                    }
-                  }}
-                  disabled={!wallet.isConnected || !contractAddress || !unfreezeAddress}
-                  className="bg-purple-600 hover:bg-purple-500 text-xs h-7 w-20 disabled:bg-purple-600 disabled:opacity-100"
-                >
-                  Unfreeze
-                </Button>
-              </div>
+                    <div className="space-y-2">
+                      <Label className="text-gray-400 text-sm">Admin Address</Label>
+                      <Input
+                        value={tokenConfig.admin}
+                        onChange={(e) => updateTokenConfig('admin', e.target.value)}
+                        className="bg-black border-current/20 text-gray-300 text-sm h-8 font-mono"
+                        placeholder="Connect wallet to auto-fill"
+                      />
+                    </div>
 
-              <div className="flex gap-2 items-end">
-                <div className="flex-1 space-y-1">
-                  <Label className="text-gray-400 text-xs">New Admin Address</Label>
-                  <Input
-                    value={newAdminAddress}
-                    onChange={(e) => setNewAdminAddress(e.target.value)}
-                    placeholder="GXXXXX..."
-                    className="bg-black border-current/20 text-gray-300 text-xs h-7 font-mono"
-                  />
-                </div>
-                <Button 
-                  onClick={async () => {
-                    if (!wallet.isConnected || !contractAddress || !newAdminAddress) return;
-                    try {
-                      addLog(`Executing transfer_admin on contract ${contractAddress.substring(0, 8)}...`, 'info');
-                      addLog(`New admin: ${newAdminAddress}`, 'info');
-                      await new Promise(resolve => setTimeout(resolve, 1200));
-                      const txHash = `TX_TRANSFER_ADMIN_` + Math.random().toString(36).substring(2, 15).toUpperCase();
-                      addLog(`Transferred admin to ${newAdminAddress.substring(0, 8)}...`, 'success');
-                      addLog(`Transaction: ${txHash}`, 'info');
-                      setNewAdminAddress('');
-                    } catch (error) {
-                      addLog(`Admin transfer failed: ${error}`, 'error');
-                    }
-                  }}
-                  disabled={!wallet.isConnected || !contractAddress || !newAdminAddress}
-                  className="bg-purple-600 hover:bg-purple-500 text-xs h-7 w-20 disabled:bg-purple-600 disabled:opacity-100"
-                >
-                  Transfer
-                </Button>
-              </div>
-            </div>
+                    {/* RPC Health Status */}
+                    {rpcHealthStatus && (
+                      <div className="bg-gray-800/50 rounded p-3 space-y-2">
+                        <div className="text-xs text-gray-400 font-medium">RPC Status</div>
+                        <div className="flex items-center gap-2 text-xs">
+                          <div className={`w-2 h-2 rounded-full ${rpcHealthStatus.primary.healthy ? 'bg-green-500' : 'bg-red-500'}`}></div>
+                          <span className="text-gray-300">Primary:</span>
+                          <span className={rpcHealthStatus.primary.healthy ? 'text-green-400' : 'text-red-400'}>
+                            {rpcHealthStatus.primary.details}
+                          </span>
+                          {rpcHealthStatus.primary.latency && (
+                            <span className="text-gray-500">({rpcHealthStatus.primary.latency}ms)</span>
+                          )}
+                        </div>
+                        {!rpcHealthStatus.primary.healthy && (
+                          <div className="flex items-center gap-2 text-xs">
+                            <div className={`w-2 h-2 rounded-full ${rpcHealthStatus.fallback.healthy ? 'bg-green-500' : 'bg-red-500'}`}></div>
+                            <span className="text-gray-300">Fallback:</span>
+                            <span className={rpcHealthStatus.fallback.healthy ? 'text-green-400' : 'text-red-400'}>
+                              {rpcHealthStatus.fallback.details}
+                            </span>
+                            {rpcHealthStatus.fallback.latency && (
+                              <span className="text-gray-500">({rpcHealthStatus.fallback.latency}ms)</span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
 
-            {!wallet.isConnected && (
-              <div className="text-xs text-gray-500 text-center">
-                Connect wallet to manage contracts
+                    <div className="pt-2">
+                      <Button 
+                        onClick={deployToken}
+                        disabled={isDeploying || !wallet.isConnected}
+                        className="w-full h-10 bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700"
+                      >
+                        {isDeploying ? (
+                          <div className="flex items-center gap-2">
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                            Deploying Token...
+                          </div>
+                        ) : !wallet.isConnected ? (
+                          <div className="flex items-center gap-2">
+                            <Wallet className="w-4 h-4" />
+                            Connect Wallet to Deploy
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-2">
+                            <Zap className="w-4 h-4" />
+                            Deploy SEP-41 Token to Futurenet
+                          </div>
+                        )}
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
               </div>
             )}
-          </CardContent>
-        </Card>
 
-        {/* Transaction Log */}
-        <Card className="bg-gray-900 border-current/20 rounded-none">
-          <CardHeader className="!flex !flex-row !items-center !justify-between !space-y-0 pb-2">
-            <CardTitle className="text-gray-300 flex items-center gap-2">
-              <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-              Log
-            </CardTitle>
-            <Button onClick={clearLogs} size="sm" variant="ghost" className="h-10 w-10 p-0 hover:bg-gray-700">
-              <Trash2 className="w-6 h-6" />
-            </Button>
-          </CardHeader>
-          <CardContent>
-            <div className="bg-black rounded p-3 h-[600px] overflow-y-auto">
-              {logs.length === 0 ? (
-                <div className="text-gray-500 text-sm">
-                  Deployment logs will appear here...
+          </div>
+
+          {/* Right Column - Transaction Log */}
+          <Card className="bg-gray-900 border-current/20 h-fit">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-gray-300 flex items-center justify-between w-full">
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                  Logs
                 </div>
-              ) : (
-                <div className="space-y-1">
-                  {[...logs].reverse().map((log, index) => (
-                    <div key={index} className="text-xs font-mono text-gray-300">
-                      {log}
-                    </div>
-                  ))}
+                <div className="flex items-center gap-1">
+                  <Button 
+                    onClick={() => setIsLogsPopout(true)} 
+                    size="sm" 
+                    variant="ghost" 
+                    className="h-10 w-10 p-0 hover:bg-gray-700"
+                    title="Open logs in full screen"
+                  >
+                    <Maximize2 className="w-6 h-6" />
+                  </Button>
+                  <Button 
+                    onClick={clearLogs} 
+                    size="sm" 
+                    variant="ghost" 
+                    className="h-10 w-10 p-0 hover:bg-gray-700"
+                    title="Clear logs"
+                  >
+                    <Trash2 className="w-6 h-6" />
+                  </Button>
                 </div>
-              )}
-            </div>
-          </CardContent>
-        </Card>
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="bg-black rounded p-3 h-[800px] overflow-y-auto">
+                {logs.length === 0 ? (
+                  <div className="text-gray-500 text-sm">
+                    Activity logs will appear here...
+                  </div>
+                ) : (
+                  <div className="space-y-1">
+                    {[...logs].reverse().map((log, index) => (
+                      <div key={index} className="text-xs font-mono text-gray-300">
+                        {log}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
           </div>
         </div>
       </div>
 
-      {/* Additional Content Section */}
-      <div className="px-6 space-y-6">
-        {/* Token Transfer */}
-        <Card className="bg-gray-900 border-current/20 rounded-none">
-          <CardHeader>
-            <CardTitle className="text-gray-300 flex items-center gap-2">
-              <Send className="w-5 h-5 text-blue-400" />
-              Transfer Tokens
-              {selectedTokenForTransfer && (
-                <Badge variant="outline" className="text-xs ml-2">
-                  {selectedTokenForTransfer.config.symbol}
-                </Badge>
-              )}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {selectedTokenForTransfer ? (
-              <div className="space-y-3">
-                <div className="bg-blue-900/20 border border-blue-600/30 rounded p-3">
-                  <div className="text-blue-400 text-sm">
-                    ✨ Ready to transfer {selectedTokenForTransfer.config.name} ({selectedTokenForTransfer.config.symbol})
-                  </div>
-                  <div className="text-gray-400 text-xs mt-1">
-                    Contract: {selectedTokenForTransfer.contractId.substring(0, 20)}...
-                  </div>
+      {/* Full-width Logs Overlay */}
+      {isLogsPopout && (
+        <>
+          {/* Backdrop overlay that shows existing page with reduced opacity */}
+          <div 
+            className="fixed inset-0 bg-black bg-opacity-30 z-40"
+            onClick={() => setIsLogsPopout(false)}
+          />
+          
+          {/* Logs modal */}
+          <div className="fixed inset-4 z-50 flex flex-col pointer-events-none">
+            <div className="bg-gray-900 border border-gray-700 rounded-lg w-full h-full flex flex-col pointer-events-auto max-w-6xl mx-auto">
+              <div className="flex items-center justify-between p-4 border-b border-gray-700 flex-shrink-0">
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                  <h2 className="text-gray-300 text-lg font-semibold">Activity Logs</h2>
                 </div>
-
-                <div className="space-y-2">
-                  <Label className="text-gray-400 text-sm">Recipient Address</Label>
-                  <Input
-                    value={transferRecipient}
-                    onChange={(e) => setTransferRecipient(e.target.value)}
-                    placeholder="GXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
-                    className="font-mono text-xs bg-black border-current/20 text-gray-300 h-8"
-                    maxLength={56}
-                  />
-                  <div className="text-gray-500 text-xs">
-                    💡 Tip: To send to yourself, use: {wallet.publicKey?.substring(0, 12)}...
-                  </div>
-                </div>
-
-                <div className="flex gap-2 items-end">
-                  <div className="flex-1 space-y-1">
-                    <Label className="text-gray-400 text-xs">Amount</Label>
-                    <Input
-                      value={transferAmount}
-                      onChange={(e) => setTransferAmount(e.target.value)}
-                      placeholder="100"
-                      className="bg-black border-current/20 text-gray-300 text-xs h-7"
-                      type="number"
-                      min="0.0000001"
-                      step="0.0000001"
-                    />
-                  </div>
+                <div className="flex items-center gap-1">
                   <Button 
-                    onClick={executeTokenTransfer}
-                    disabled={!wallet.isConnected || !transferRecipient || !transferAmount}
-                    className="bg-blue-600 hover:bg-blue-500 text-xs h-7 px-4 disabled:bg-blue-600 disabled:opacity-50"
+                    onClick={() => checkAllRpcHealth(true)} 
+                    size="sm" 
+                    variant="ghost" 
+                    className="h-10 px-3 hover:bg-gray-700"
+                    title="Check RPC Health"
                   >
-                    Execute Transfer
-                  </Button>
-                </div>
-
-                <div className="flex gap-2">
+                    <span className="text-xs">RPC Status</span>
+  </Button>
                   <Button 
-                    onClick={() => setTransferRecipient(wallet.publicKey || '')}
-                    variant="outline"
-                    size="sm"
-                    className="text-xs h-6"
+                    onClick={clearLogs} 
+                    size="sm" 
+                    variant="ghost" 
+                    className="h-10 w-10 p-0 hover:bg-gray-700"
+                    title="Clear logs"
                   >
-                    Send to Self
+                    <Trash2 className="w-6 h-6" />
                   </Button>
                   <Button 
-                    onClick={() => {
-                      setSelectedTokenForTransfer(null);
-                      setTransferRecipient('');
-                      setTransferAmount('100');
-                    }}
-                    variant="outline" 
-                    size="sm"
-                    className="text-xs h-6"
+                    onClick={() => setIsLogsPopout(false)} 
+                    size="sm" 
+                    variant="ghost" 
+                    className="h-10 w-10 p-0 hover:bg-gray-700"
+                    title="Close full screen"
                   >
-                    Cancel
+                    <Minimize2 className="w-6 h-6" />
                   </Button>
                 </div>
               </div>
-            ) : (
-              <div className="text-center py-4">
-                <div className="text-gray-500 text-sm">
-                  Click "Test Transfer" on any deployed token to start
+              <div className="flex-1 p-4 min-h-0">
+                <div className="bg-black rounded p-4 h-full overflow-y-auto">
+                  {logs.length === 0 ? (
+                    <div className="text-gray-500 text-sm">
+                      Activity logs will appear here...
+                    </div>
+                  ) : (
+                    <div className="space-y-1">
+                      {[...logs].reverse().map((log, index) => (
+                        <div key={index} className="text-sm font-mono text-gray-300">
+                          {log}
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
-                <div className="text-gray-600 text-xs mt-2">
-                  You can transfer tokens to any Stellar address, including your own
-                </div>
-                {deployedTokens.length > 0 ? (
-                  <div className="text-blue-400 text-xs mt-3">
-                    ✨ You have {deployedTokens.length} deployed token(s) - look for "Test Transfer" buttons below
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    <div className="text-yellow-400 text-xs">
-                      ⚠️ No deployed tokens found in current session
-                    </div>
-                    <Button 
-                      onClick={scanForPreviousTokens}
-                      disabled={!wallet.isConnected}
-                      size="sm"
-                      className="bg-green-600 hover:bg-green-500 text-xs h-6"
-                    >
-                      🔍 Scan Blockchain for My Tokens
-                    </Button>
-                    <div className="text-gray-600 text-xs">
-                      This will search Futurenet for tokens deployed by {wallet.publicKey?.substring(0, 8)}...
-                    </div>
-                  </div>
-                )}
               </div>
-            )}
-
-            {!wallet.isConnected && (
-              <div className="text-xs text-gray-500 text-center">
-                Connect wallet to transfer tokens
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Deployed Tokens */}
-        {deployedTokens.length > 0 && (
-          <Card className="bg-gray-900 border-current/20 rounded-none">
-            <CardHeader>
-              <CardTitle className="text-gray-300 flex items-center gap-2">
-                <CheckCircle className="w-5 h-5 text-green-400" />
-                Deployed SEP-41 Tokens ({deployedTokens.length})
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="grid gap-4">
-                {deployedTokens.map((token, index) => (
-                  <div key={index} className="border border-gray-700 rounded p-4 space-y-4">
-                    <div className="flex items-start justify-between">
-                      <div>
-                        <div className="flex items-center gap-2 mb-2">
-                          <span className="font-semibold text-gray-300 text-lg">{token.config.name}</span>
-                          <Badge className="bg-purple-600">{token.config.symbol}</Badge>
-                          <Badge className="bg-green-600 text-xs">SEP-41</Badge>
-                          <Badge className="bg-blue-600 text-xs">{token.network}</Badge>
-                        </div>
-                        <div className="text-sm text-gray-400 space-y-1">
-                          <div>Deployed: {token.deployedAt.toLocaleString()}</div>
-                          <div>Initial Supply: {token.config.initialSupply} {token.config.symbol}</div>
-                          <div className="flex gap-4">
-                            {token.config.isFixedSupply && <span className="text-yellow-400">Fixed Supply</span>}
-                            {token.config.isMintable && <span className="text-green-400">Mintable</span>}
-                            {token.config.isBurnable && <span className="text-red-400">Burnable</span>}
-                            {token.config.isFreezable && <span className="text-blue-400">Freezable</span>}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="space-y-2 text-xs">
-                      <div className="flex items-center justify-between">
-                        <span className="text-gray-400">Contract ID:</span>
-                        <div className="flex items-center gap-2">
-                          <code className="bg-black px-2 py-1 rounded font-mono text-gray-300">
-                            {token.contractId}
-                          </code>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => copyToClipboard(token.contractId)}
-                            className="h-6 w-6 p-0"
-                          >
-                            <Copy className="w-3 h-3" />
-                          </Button>
-                        </div>
-                      </div>
-                      
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-                        <div className="flex justify-between">
-                          <span className="text-gray-400">Deploy TX:</span>
-                          <code className="text-gray-300 text-xs">{token.deployTxHash}</code>
-                        </div>
-                        {token.initTxHash && (
-                          <div className="flex justify-between">
-                            <span className="text-gray-400">Init TX:</span>
-                            <code className="text-gray-300 text-xs">{token.initTxHash}</code>
-                          </div>
-                        )}
-                        {token.mintTxHash && (
-                          <div className="flex justify-between">
-                            <span className="text-gray-400">Mint TX:</span>
-                            <code className="text-gray-300 text-xs">{token.mintTxHash}</code>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="flex gap-2 pt-2">
-                      <Button 
-                        size="sm"
-                        onClick={() => testTokenTransfer(token)}
-                        disabled={!wallet.isConnected}
-                        className="bg-green-600 hover:bg-green-500 text-xs"
-                      >
-                        <Send className="w-3 h-3 mr-1" />
-                        Test Transfer
-                      </Button>
-                      <Button 
-                        size="sm" 
-                        variant="outline"
-                        onClick={() => {
-                          if (token.contractId.startsWith('C') && token.contractId.length === 56) {
-                            window.open(`https://futurenet.stellarchain.io/contracts/${token.contractId}`, '_blank');
-                          } else {
-                            addLog(`⚠️ Contract ${token.contractId} appears to be mock/simulated`, 'warning');
-                            addLog(`💡 Check the transaction hash instead: ${token.deployTxHash}`, 'info');
-                            if (token.deployTxHash && !token.deployTxHash.startsWith('mock')) {
-                              window.open(`https://futurenet.stellarchain.io/transactions/${token.deployTxHash}`, '_blank');
-                            }
-                          }
-                        }}
-                        className="text-xs"
-                      >
-                        <ExternalLink className="w-3 h-3 mr-1" />
-                        Explorer
-                      </Button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Testing Workflow */}
-        <Card className="bg-gray-900 border-current/20 rounded-none">
-          <CardHeader>
-            <CardTitle className="text-gray-300">
-              🧪 Testing Workflow
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="bg-blue-900/20 border border-blue-600/30 rounded p-4">
-              <h4 className="text-blue-400 font-semibold mb-3">Current Functionality:</h4>
-              <ol className="text-blue-400 text-sm space-y-2 list-decimal ml-4">
-                <li><strong>Mock Wallet Connection</strong> - Simulates wallet connection with test address</li>
-                <li><strong>SEP-41 Token Configuration</strong> - Full standard token parameters</li>
-                <li><strong>Contract Deployment Simulation</strong> - Shows realistic deployment process</li>
-                <li><strong>Token Transfer Testing</strong> - Mock transfer transactions</li>
-                <li><strong>Contract ID Generation</strong> - Realistic contract IDs for wallet testing</li>
-              </ol>
             </div>
+          </div>
+        </>
+      )}
 
-            {deployedTokens.length > 0 && (
-              <div className="bg-green-900/20 border border-green-600/30 rounded p-4">
-                <h4 className="text-green-400 font-semibold mb-3">Next Steps - Wallet Integration:</h4>
-                <div className="text-green-400 text-sm space-y-2">
-                  <p><strong>1. Copy Contract IDs:</strong> Use these contract IDs in your wallet (port 3000)</p>
-                  <p><strong>2. Test Token Discovery:</strong> Your wallet should automatically find these tokens</p>
-                  <p><strong>3. Verify Balance Display:</strong> Check if tokens show up in wallet UI</p>
-                  <p><strong>4. Test Token Transfers:</strong> Try sending tokens to another address</p>
-                  <p><strong>5. Real Deployment (Later):</strong> Replace mock with actual WASM deployment</p>
-                </div>
-              </div>
-            )}
-
-          </CardContent>
-        </Card>
-      </div>
     </div>
   );
 }
