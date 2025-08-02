@@ -100,12 +100,31 @@ export async function signTransactionWithPopup(
       requestId
     });
     
-    // Open wallet popup with proper dimensions
-    const popup = window.open(
+    // Try multiple popup approaches to avoid blocking
+    let popup;
+    
+    // Approach 1: Direct popup (original working approach)
+    popup = window.open(
       popupUrl, 
       'safu-wallet-sign', 
       'width=450,height=650,scrollbars=yes,resizable=yes,status=no,location=no,toolbar=no,menubar=no'
     );
+    
+    // Approach 2: If blocked, try with about:blank first then navigate
+    if (!popup) {
+      popup = window.open(
+        'about:blank', 
+        'safu-wallet-sign', 
+        'width=450,height=650,scrollbars=yes,resizable=yes,status=no,location=no,toolbar=no,menubar=no'
+      );
+      
+      if (popup) {
+        // Navigate after opening
+        setTimeout(() => {
+          popup.location.href = popupUrl;
+        }, 10);
+      }
+    }
     
     if (!popup) {
       reject(new Error('Failed to open wallet popup. Please allow popups for this site.'));

@@ -32,3 +32,6 @@ dist-ssr
 # Persistent browser data
 browser-data/
 browser-endpoint.txt
+
+# Crush directory
+.crush/
