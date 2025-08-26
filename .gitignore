@@ -57,3 +57,6 @@ tests/old/
 # Server
 start.sh
 
+# Binaries
+stellar
+

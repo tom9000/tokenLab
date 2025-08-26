@@ -1,1 +1,0 @@
-please read docs/upw.md
