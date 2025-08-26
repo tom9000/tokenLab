@@ -7,10 +7,14 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
+# Node
 node_modules
 dist
 dist-ssr
 *.local
+
+# Docs
+docs/
 
 # Editor directories and files
 .vscode/*
@@ -28,10 +32,28 @@ dist-ssr
 /playwright-report/
 /blob-report/
 /playwright/.cache/
+screenshots/
 
 # Persistent browser data
 browser-data/
 browser-endpoint.txt
 
-# Crush directory
+# IDE
+tokenLab.code-workspace
+CLAUDE.md
+.claude/
+CRUSH.md
 .crush/
+.vscode/
+AGENTS.md
+
+# Reference
+freighter-repo
+
+# Bits
+sep41_wasm_base64.txt
+tests/old/
+
+# Server
+start.sh
+

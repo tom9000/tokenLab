@@ -26,6 +26,11 @@ export class PopupWalletAdapter implements WalletClient {
   }
 
   async signTransaction(transactionXdr: string, options: any = {}): Promise<string> {
+    // Validate that the XDR is a valid transaction
+    if (!transactionXdr || typeof transactionXdr !== 'string') {
+      throw new Error('Invalid transaction XDR provided for signing');
+    }
+
     const popupOptions: PopupSigningOptions = {
       description: options.description || 'Sign Transaction',
       networkPassphrase: options.networkPassphrase,
@@ -35,12 +40,17 @@ export class PopupWalletAdapter implements WalletClient {
       keepPopupOpen: options.keepPopupOpen || false
     };
 
-    const result = await signTransactionWithPopup(transactionXdr, popupOptions);
-    
-    if (result.signedTransactionXdr) {
-      return result.signedTransactionXdr;
-    } else {
-      throw new Error('Transaction signing failed');
+    try {
+      const result = await signTransactionWithPopup(transactionXdr, popupOptions);
+      
+      if (result.signedTransactionXdr) {
+        return result.signedTransactionXdr;
+      } else {
+        throw new Error('Transaction signing failed - no signed XDR returned');
+      }
+    } catch (error) {
+      console.error('Transaction signing error:', error);
+      throw new Error(`Transaction signing failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 

@@ -139,17 +139,19 @@ export class ContractDeploymentService {
       progress('upload', '📤 Uploading contract to Stellar network...');
       
       // Step 1: Upload contract WASM
-      const uploadTx = new TransactionBuilder(sourceAccount, {
+      const uploadTxBuilder = new TransactionBuilder(sourceAccount, {
         fee: BASE_FEE,
         networkPassphrase: this.networkConfig.networkPassphrase,
       })
         .addOperation(
           Operation.uploadContractWasm({ wasm: contractWasm })
         )
-        .setTimeout(30)
-        .build();
+        .setTimeout(30);
 
+      // Build the transaction right before signing
+      const uploadTx = uploadTxBuilder.build();
       const uploadXdr = uploadTx.toXDR();
+      
       const signedUploadXdr = await walletClient.signTransaction(uploadXdr, {
         networkPassphrase: this.networkConfig.networkPassphrase,
         accountToSign: sourcePublicKey
@@ -164,7 +166,7 @@ export class ContractDeploymentService {
       progress('deploy', '🏗️ Creating contract instance...');
       
       // Step 2: Create contract instance
-      const deployTx = new TransactionBuilder(sourceAccount, {
+      const deployTxBuilder = new TransactionBuilder(sourceAccount, {
         fee: BASE_FEE,
         networkPassphrase: this.networkConfig.networkPassphrase,
       })
@@ -175,10 +177,12 @@ export class ContractDeploymentService {
             salt: Buffer.alloc(32) // Random salt for contract address generation
           })
         )
-        .setTimeout(30)
-        .build();
+        .setTimeout(30);
 
+      // Build the transaction right before signing
+      const deployTx = deployTxBuilder.build();
       const deployXdr = deployTx.toXDR();
+      
       const signedDeployXdr = await walletClient.signTransaction(deployXdr, {
         networkPassphrase: this.networkConfig.networkPassphrase,
         accountToSign: sourcePublicKey
@@ -193,7 +197,7 @@ export class ContractDeploymentService {
       
       // Step 3: Initialize the token
       const contract = new Contract(contractId);
-      const initTx = new TransactionBuilder(sourceAccount, {
+      const initTxBuilder = new TransactionBuilder(sourceAccount, {
         fee: BASE_FEE,
         networkPassphrase: this.networkConfig.networkPassphrase,
       })
@@ -212,10 +216,12 @@ export class ContractDeploymentService {
             nativeToScVal(config.isFreezable, { type: 'bool' })
           )
         )
-        .setTimeout(30)
-        .build();
+        .setTimeout(30);
 
+      // Build the transaction right before signing
+      const initTx = initTxBuilder.build();
       const initXdr = initTx.toXDR();
+      
       const signedInitXdr = await walletClient.signTransaction(initXdr, {
         networkPassphrase: this.networkConfig.networkPassphrase,
         accountToSign: sourcePublicKey
@@ -229,7 +235,7 @@ export class ContractDeploymentService {
       if (config.initialSupply && parseInt(config.initialSupply) > 0) {
         progress('mint', `💰 Minting initial supply: ${config.initialSupply} ${config.symbol}`);
         
-        const mintTx = new TransactionBuilder(sourceAccount, {
+        const mintTxBuilder = new TransactionBuilder(sourceAccount, {
           fee: BASE_FEE,
           networkPassphrase: this.networkConfig.networkPassphrase,
         })
@@ -240,10 +246,12 @@ export class ContractDeploymentService {
               nativeToScVal(config.initialSupply, { type: 'i128' })
             )
           )
-          .setTimeout(30)
-          .build();
+          .setTimeout(30);
 
+        // Build the transaction right before signing
+        const mintTx = mintTxBuilder.build();
         const mintXdr = mintTx.toXDR();
+        
         const signedMintXdr = await walletClient.signTransaction(mintXdr, {
           networkPassphrase: this.networkConfig.networkPassphrase,
           accountToSign: sourcePublicKey
@@ -363,15 +371,18 @@ export class ContractDeploymentService {
         throw new Error(`Unknown operation: ${operation}`);
     }
 
-    const tx = new TransactionBuilder(sourceAccount, {
+    // Create transaction builder
+    const txBuilder = new TransactionBuilder(sourceAccount, {
       fee: BASE_FEE,
       networkPassphrase: this.networkConfig.networkPassphrase,
     })
       .addOperation(contractCall)
-      .setTimeout(30)
-      .build();
+      .setTimeout(30);
 
+    // Build the transaction right before signing
+    const tx = txBuilder.build();
     const txXdr = tx.toXDR();
+    
     const signedXdr = await walletClient.signTransaction(txXdr, {
       networkPassphrase: this.networkConfig.networkPassphrase,
       accountToSign: sourcePublicKey
