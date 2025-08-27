@@ -1,15 +1,15 @@
 # Token Lab
 
-SEP-41 Token Development & Testing Environment
+SEP-41 Token Deployment & Configuration Environment
 
 ## Overview
 
-Token Lab is a standalone Vite React application for developing and testing Stellar SEP-41 tokens on Futurenet. It communicates with the safu-dev wallet via localStorage bridge for wallet operations.
+Token Lab is a Vite React application for developing and deploying Stellar SEP-41 tokens. It communicates with the Safu-Dev wallet via localStorage bridge for wallet operations.
 
 ## Features
 
 - 🪙 **SEP-41 Token Creation** - Deploy standard tokens with custom configurations
-- 🔗 **Wallet Bridge Integration** - Connects to safu-dev wallet for transaction signing
+- 🔗 **Wallet Bridge Integration** - Connects to Safu-Dev wallet for transaction signing
 - 🧪 **Testing Environment** - Test token functionality on Futurenet
 - 📊 **Real-time Logging** - Monitor deployment and transaction status
 - 🎨 **Modern UI** - Clean, responsive interface with Tailwind CSS
@@ -62,7 +62,6 @@ tokenLab/
 
 ## Configuration
 
-- **Port:** 3004 (configured in vite.config.ts)
 - **Network:** Futurenet (Stellar testnet)
 - **Wallet Bridge:** localStorage polling at 100ms intervals
 - **Connection Timeout:** 30 seconds
@@ -71,17 +70,12 @@ tokenLab/
 
 ### Prerequisites
 - Node.js 18+
-- safu-dev wallet running on port 3003
+- safu-dev wallet running on localhost
 
 ### Commands
 - `npm run dev` - Start development server
 - `npm run build` - Build for production
 - `npm run preview` - Preview production build
-
-### Debugging
-- Check browser console for wallet bridge logs
-- Monitor localStorage keys: `safu-wallet-requests`, `safu-wallet-responses`
-- Use the real-time log panel in the UI
 
 ## Wallet Bridge Communication
 
@@ -99,19 +93,12 @@ The bridge enables:
 
 ## Troubleshooting
 
-### Connection Issues
-1. Ensure safu-dev wallet is running on port 3003
-2. Make sure wallet is unlocked and logged in
-3. Check browser console for bridge errors
-4. Try refreshing both applications
-
 ### Build Issues
 ```bash
 # Clear node_modules and reinstall
 rm -rf node_modules package-lock.json
 npm install
 ```
-
 ## Future Enhancements
 
 - [ ] Real contract deployment (currently simulated)
